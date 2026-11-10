@@ -1,0 +1,37 @@
+{
+  "package": "cn.dsh.gaodenav",
+  "name": "手环导航",
+  "icon": "/common/logo.png",
+  "versionName": "1.1.0",
+  "versionCode": 3,
+  "minPlatformVersion": 1000,
+  "deviceTypeList": [
+    "watch"
+  ],
+  "features": [
+    {
+      "name": "system.interconnect"
+    },
+    {
+      "name": "system.vibrator"
+    },
+    {
+      "name": "system.prompt"
+    }
+  ],
+  "config": {
+    "logLevel": "log",
+    "designWidth": 192
+  },
+  "display": {
+    "backgroundColor": "#000000"
+  },
+  "router": {
+    "entry": "pages/index",
+    "pages": {
+      "pages/index": {
+        "component": "index"
+      }
+    }
+  }
+}

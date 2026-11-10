@@ -1,0 +1,46 @@
+# ===== 签名与密钥：绝不提交 =====
+*.jks
+*.p12
+*.pem
+*.keystore
+keys/
+android-app/libs/*.jar
+android-app/libs/*.txt
+!android-app/libs/.gitkeep
+
+# ===== 第三方依赖（tools/fetch-deps 生成，不入库）=====
+# 高德 SDK / 小米互联 SDK 都是别人的代码，许可证不允许转分发
+third_party/AMapNavi/*
+third_party/r8/*
+!third_party/AMapNavi/.gitkeep
+.cache/
+
+# ===== 构建产物 =====
+out/
+dist/
+build/
+android-app/out/
+android-app/dist/
+band-app/dist/
+band-app-pro/dist/
+*.apk
+*.rpk
+*.dex
+*.class
+*.pyc
+__pycache__/
+node_modules/
+/tmp/
+# aiot 打包时的临时工程
+.temp_*/
+band-app*/.temp_*/
+
+# ===== 手环工程的签名 PEM（由 tools/gen-signing 分发）=====
+band-app/sign/**/*.pem
+band-app-pro/sign/**/*.pem
+
+# ===== IDE / 本地配置 =====
+.idea/
+.vscode/
+*.iml
+local.properties

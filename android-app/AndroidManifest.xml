@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  手环导航（cn.dsh.gaodenav）
+  包名默认为 cn.dsh.gaodenav：APK 与手环端 rpk 必须一致；改包名要两处一起改，并重新绑定高德 Key。
+  高德 Key 必须绑定「你自己的包名 + 你自己签名证书的 SHA1」（用 tools/gen-signing.sh 生成后
+  看 keys/fingerprints.txt），不要照抄示例/别人的 SHA1 —— 详见 README 与 SIGNING.md。
+  两端必须用同一套证书签名，否则小米互联报 fingerprint verify failed。
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="cn.dsh.gaodenav"
+    android:versionCode="8"
+    android:versionName="1.1.0">
+
+    <uses-sdk
+        android:minSdkVersion="26"
+        android:targetSdkVersion="30" />
+
+    <!-- 小米互联 SDK 需要发现 小米运动健康/穿戴服务，Android 11+ 需要包可见性 -->
+    <!-- ⚠️ 不要删：小米互联 SDK（xms-wearable）通过包可见性发现「小米运动健康/穿戴服务」。
+         Android 11+ 包可见性受限，删掉这条会导致 connectedNodes 为空、手环连接失败。
+         （1.2.0 精简权限时踩过这个回归，1.2.1 已加回并加了 build.sh 构建期校验） -->
+    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" />
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_LOCATION_EXTRA_COMMANDS" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission
+        android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="28" />
+
+    <application
+        android:allowBackup="false"
+        android:extractNativeLibs="true"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:supportsRtl="true"
+        android:usesCleartextTraffic="true"
+        android:theme="@android:style/Theme.DeviceDefault">
+
+        <!-- 高德导航 SDK Key：**不内置**，由用户在 App 主界面填写（AmapKey 运行时 setApiKey）。
+             这里保留空值占位，避免部分 SDK 版本读取 meta-data 时出现问题。 -->
+        <meta-data
+            android:name="com.amap.api.v2.apikey"
+            android:value="" />
+
+        <!-- 高德定位 SDK 服务 -->
+        <service android:name="com.amap.api.location.APSService" />
+
+        <!-- 高德导航组件 Activity（AmapNaviPage 用；本方案用 AMapNaviView，保留声明无害） -->
+        <activity
+            android:name="com.amap.api.navi.AmapRouteActivity"
+            android:launchMode="singleInstance"
+            android:configChanges="orientation|keyboardHidden|screenSize|navigation" />
+
+        <!-- 主界面 -->
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:label="@string/app_name"
+            android:launchMode="singleTop">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!-- 高德导航 SDK 集成页（搜索候选 / 坐标 / 地图选点 / 驾车·骑行·步行） -->
+        <activity
+            android:name=".NavSdkActivity"
+            android:configChanges="orientation|keyboardHidden|screenSize"
+            android:screenOrientation="portrait"
+            android:theme="@android:style/Theme.DeviceDefault.NoActionBar" />
+
+        <!-- 地图选点页（3D 地图 MapView + 逆地理地址） -->
+        <activity
+            android:name=".MapPickActivity"
+            android:configChanges="orientation|keyboardHidden|screenSize"
+            android:screenOrientation="portrait"
+            android:theme="@android:style/Theme.DeviceDefault.NoActionBar" />
+    </application>
+</manifest>

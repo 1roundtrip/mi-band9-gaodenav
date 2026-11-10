@@ -1,0 +1,181 @@
+<template>
+  <div class="page">
+    <text class="status">{{statusText}}</text>
+    <div class="center">
+      <image class="icon" src="{{iconPath}}" show="{{hasNav}}"></image>
+      <text class="action" show="{{hasNav}}">{{actionText}}</text>
+      <text class="dist" show="{{hasNav && distText}}">{{distText}}</text>
+      <text class="hint" show="{{!hasNav}}">{{hintText}}</text>
+      <text class="sub" show="{{!hasNav}}">{{subText}}</text>
+    </div>
+    <text class="remain" show="{{hasNav}}">{{remainText}}</text>
+  </div>
+</template>
+
+<style>
+.page {
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  height: 100%;
+  padding-top: 21px;
+  padding-bottom: 24px;
+  background-color: #000000;
+}
+.status {
+  font-size: 23px;
+  color: #6f6f6f;
+  text-align: center;
+}
+.center {
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+.icon {
+  width: 196px;
+  height: 196px;
+}
+.action {
+  margin-top: 7px;
+  font-size: 70px;
+  font-weight: bold;
+  color: #ffffff;
+  text-align: center;
+}
+.dist {
+  margin-top: 10px;
+  font-size: 52px;
+  color: #ffd76a;
+  text-align: center;
+}
+.hint {
+  font-size: 33px;
+  color: #dadada;
+  text-align: center;
+}
+.sub {
+  margin-top: 8px;
+  font-size: 23px;
+  color: #6f6f6f;
+  text-align: center;
+}
+.remain {
+  font-size: 30px;
+  color: #b9b9b9;
+  text-align: center;
+}
+</style>
+
+<script>
+import interconnect from '@system.interconnect'
+import vibrator from '@system.vibrator'
+
+const BASE = '/common/icons/'
+const ICONS = {
+  left: BASE + 'left.png',
+  right: BASE + 'right.png',
+  straight: BASE + 'straight.png',
+  'slight-left': BASE + 'slight-left.png',
+  'slight-right': BASE + 'slight-right.png',
+  'uturn-left': BASE + 'uturn-left.png',
+  'uturn-right': BASE + 'uturn-right.png',
+  arrive: BASE + 'arrive.png'
+}
+
+export default {
+  private: {
+    statusText: '未连接手机',
+    hasNav: false,
+    iconPath: '',
+    actionText: '',
+    distText: '',
+    remainText: '',
+    hintText: '手机上打开高德导航',
+    subText: '蓝牙连着手环就会自动同步',
+    lastSeq: 0
+  },
+
+  onInit() {
+    this.initBridge()
+  },
+
+  initBridge() {
+    try {
+      const conn = interconnect.instance()
+      conn.onmessage = (res) => {
+        let msg = null
+        try {
+          msg = JSON.parse(res.data)
+        } catch (e) {
+          return
+        }
+        this.handleMessage(msg)
+      }
+      conn.onopen = () => {
+        this.statusText = '已连接手机'
+      }
+      conn.onclose = () => {
+        this.statusText = '连接断开'
+        this.hasNav = false
+        this.hintText = '连接断开，等待重连'
+      }
+      conn.onerror = () => {
+        this.statusText = '连接异常'
+      }
+    } catch (e) {
+      this.statusText = '互联不可用'
+      console.error('[GaoDeNav] init bridge failed: ' + e)
+    }
+  },
+
+  handleMessage(msg) {
+    if (!msg || !msg.type) return
+    if (msg.type === 'nav') {
+      this.hasNav = true
+      this.actionText = msg.action || '直行'
+      this.iconPath = ICONS[msg.turn] || ICONS.straight
+      this.distText = this.formatDist(msg.distMeters)
+      this.remainText = this.formatRemain(msg.remainSeconds, msg.remainMeters)
+      if (msg.seq && msg.seq > this.lastSeq) {
+        this.lastSeq = msg.seq
+        if (msg.vibrate !== false) {
+          try {
+            vibrator.vibrate({ mode: 'short' })
+          } catch (e) {}
+        }
+      }
+    } else if (msg.type === 'stop' || msg.type === 'idle') {
+      this.hasNav = false
+      this.hintText = '导航已结束'
+      this.subText = '手机上打开高德导航'
+      this.distText = ''
+      this.remainText = ''
+    }
+  },
+
+  formatDist(m) {
+    if (m === null || m === undefined || m === '' || isNaN(m)) return ''
+    const v = Number(m)
+    if (v >= 1000) return (v / 1000).toFixed(1) + '公里'
+    return Math.max(0, Math.round(v)) + '米'
+  },
+
+  formatRemain(sec, m) {
+    const parts = []
+    if (sec !== null && sec !== undefined && !isNaN(sec) && Number(sec) > 0) {
+      const mins = Math.round(Number(sec) / 60)
+      if (mins >= 60) {
+        parts.push(Math.floor(mins / 60) + '小时' + (mins % 60 > 0 ? (mins % 60) + '分钟' : ''))
+      } else {
+        parts.push(mins + '分钟')
+      }
+    }
+    const d = this.formatDist(m)
+    if (d && Number(m) > 0) parts.push(d)
+    return parts.join(' · ')
+  }
+}
+</script>

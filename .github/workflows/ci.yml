@@ -1,0 +1,111 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  static-checks:
+    name: 静态检查（无需 SDK）
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: bash 语法检查
+        run: |
+          set -e
+          for f in tools/*.sh tools/lib/*.sh android-app/build.sh; do
+            echo "-- bash -n $f"
+            bash -n "$f"
+          done
+
+      - name: 图标映射自测（IconMapperTest）
+        run: |
+          set -e
+          mkdir -p "${RUNNER_TEMP}/icon-test"
+          javac -encoding UTF-8 -d "${RUNNER_TEMP}/icon-test" \
+            android-app/src/cn/dsh/gaodenav/NaviIconMapper.java \
+            android-app/tools/IconMapperTest.java
+          java -cp "${RUNNER_TEMP}/icon-test" IconMapperTest
+
+      - name: python 语法检查
+        run: python3 -m py_compile tools/verify-rpk-cert.py
+
+      - name: 禁止 SIGPIPE 危险写法（unzip ... | grep -q / head）
+        run: |
+          set -e
+          # unzip | grep -q 在 pipefail 下会因 SIGPIPE 返回 141（详见 CHANGELOG 补丁 2）
+          # 只匹配「命令行起始位置」的管道，避免路径里带 unzip 的误报
+          hits="$(grep -rnE '^[[:space:]]*(\$\(|[^#]*[;&|][[:space:]]*)?(unzip|cat|sed|grep)[^|]*\|[[:space:]]*(grep -q|head )[[:space:]]' \
+                    --include='*.sh' --include='*.bash' . || true)"
+          if [ -n "$hits" ]; then
+            echo "$hits"
+            echo "::error::请改成「先落文件再 grep」，或用 grep -m1 / sed -n '1p'"
+            exit 1
+          fi
+          echo "OK: 没有 unzip|grep -q 这类写法"
+
+      - name: 手环工程 manifest 基本检查
+        run: |
+          set -e
+          python3 - <<'PY'
+          import json, sys
+          for p in ("band-app/src/manifest.json", "band-app-pro/src/manifest.json"):
+              m = json.load(open(p, encoding="utf-8"))
+              assert m["package"] == "cn.dsh.gaodenav", (p, m["package"])
+              assert m["router"]["entry"] == "pages/index", p
+              feats = {f["name"] for f in m["features"]}
+              assert "system.interconnect" in feats, p
+              assert "system.vibrator" in feats, p
+              print("OK", p, "designWidth =", m["config"]["designWidth"])
+          PY
+
+      - name: 构建脚本帮助信息可打印
+        run: |
+          bash android-app/build.sh --help > /dev/null
+          bash tools/fetch-deps.sh --help > /dev/null
+          bash tools/build-all.sh --help > /dev/null
+
+  full-build:
+    name: 完整构建（手动触发，下载 236MB 依赖）
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: 确认 Android SDK（优先用 runner 预装的）
+        run: |
+          set -e
+          echo "ANDROID_HOME=${ANDROID_HOME:-<empty>}"
+          if [ -n "${ANDROID_HOME:-}" ] && [ -d "${ANDROID_HOME}/build-tools" ]; then
+            ls "${ANDROID_HOME}/build-tools" | tail -3
+            ls "${ANDROID_HOME}/platforms" | tail -3
+          else
+            # 兜底：某些镜像没预装 SDK。Ubuntu 新版可能没有 aapt 包，失败也不阻塞后续
+            sudo apt-get update -qq || true
+            sudo apt-get install -y -qq unzip curl aapt apksigner zipalign android-sdk-platform-23 || true
+          fi
+          bash tools/check-env.sh || true
+
+      - name: 获取依赖
+        run: bash tools/fetch-deps.sh --with-r8
+
+      - name: 生成签名并构建 APK
+        env:
+          KS_PASS: ci-test-password
+        run: |
+          set -e
+          bash tools/gen-signing.sh
+          bash android-app/build.sh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: apk
+          path: android-app/dist/*.apk
+          if-no-files-found: error

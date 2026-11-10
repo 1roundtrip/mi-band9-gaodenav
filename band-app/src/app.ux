@@ -1,0 +1,10 @@
+<script>
+export default {
+  onCreate() {
+    console.log('[GaoDeNav] app created')
+  },
+  onDestroy() {
+    console.log('[GaoDeNav] app destroyed')
+  }
+}
+</script>
