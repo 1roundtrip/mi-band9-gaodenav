@@ -148,6 +148,10 @@ export default {
         }
       }
     } else if (msg.type === 'stop' || msg.type === 'idle') {
+      // 结束导航时清零序号。手机端 seq 是单调递增的，正常情况下重置与否
+      // 都能正确震动；这里清零是为了兼容旧版手机端（进程内从 1 计数）的
+      // 快应用升级场景，避免下一程 msg.seq > lastSeq 恒 false、震动全丢。
+      this.lastSeq = 0
       this.hasNav = false
       this.hintText = '导航已结束'
       this.subText = '手机上打开高德导航'
