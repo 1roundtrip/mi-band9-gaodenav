@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# 一键构建：环境检查 -> 依赖获取 -> 统一签名 -> APK -> 两个机型的 rpk -> dist/ 汇总
+# 一键构建：环境检查 -> 依赖获取 -> 统一签名 -> APK -> 7 个机型的 rpk -> dist/ 汇总
 #
 # 用法：
 #   KS_PASS='你的密码' bash tools/build-all.sh
@@ -10,8 +10,13 @@
 #
 # 产物（默认 dist/）：
 #   cn.dsh.gaodenav.apk         手机端（含高德 SDK，约 60~80MB）
-#   手环导航-手环9.rpk           手环 9 / 9NFC
-#   手环导航-手环9Pro.rpk        手环 9 Pro
+#   手环导航-手环8.rpk           手环 8 / 8NFC（胶囊屏 192×490）
+#   手环导航-手环8Pro.rpk        手环 8 Pro（方屏 336×480）
+#   手环导航-手环9.rpk           手环 9 / 9NFC（胶囊屏 192×490）
+#   手环导航-手环9Pro.rpk        手环 9 Pro（方屏 336×480）
+#   手环导航-手环10.rpk          手环 10 / 10NFC（胶囊屏 212×520）
+#   手环导航-手环10Pro.rpk       手环 10 Pro（方屏 336×480）
+#   手环导航-手环11.rpk          手环 11 / 11NFC（胶囊屏 212×520）
 #   BUILD-REPORT.txt            哈希、证书指纹、版本、工具链
 # =============================================================================
 set -uo pipefail
@@ -47,7 +52,10 @@ step "0/5 环境检查"
 if [ "$CLEAN" -eq 1 ]; then
   say "  清理旧产物（android-app/out、android-app/dist、各 band-app/dist、dist/）"
   rm -rf "$ROOT/android-app/out" "$ROOT/android-app/dist" "$ROOT/dist"
-  rm -rf "$ROOT/band-app/dist" "$ROOT/band-app-pro/dist"
+  rm -rf "$ROOT/band-app/dist" "$ROOT/band-app-pro/dist" \
+         "$ROOT/band-app-8/dist" "$ROOT/band-app-8-pro/dist" \
+         "$ROOT/band-app-10/dist" "$ROOT/band-app-10-pro/dist" \
+         "$ROOT/band-app-11/dist"
 fi
 mkdir -p "$DIST"
 
@@ -91,10 +99,18 @@ if [ "$DO_APK" -eq 1 ]; then
 fi
 
 # ------------------------------------------------------------------ RPK
-RPK_NAMES=("band-app:手环导航-手环9" "band-app-pro:手环导航-手环9Pro")
+RPK_NAMES=(
+  "band-app-8:手环导航-手环8"
+  "band-app-8-pro:手环导航-手环8Pro"
+  "band-app:手环导航-手环9"
+  "band-app-pro:手环导航-手环9Pro"
+  "band-app-10:手环导航-手环10"
+  "band-app-10-pro:手环导航-手环10Pro"
+  "band-app-11:手环导航-手环11"
+)
 RPK_DONE=()
 if [ "$DO_RPK" -eq 1 ]; then
-  step "构建手环端 RPK（手环 9 / 9 Pro）"
+  step "构建手环端 RPK（8 / 8Pro / 9 / 9Pro / 10 / 10Pro / 11，共 ${#RPK_NAMES[@]} 个）"
   have node || die "构建 rpk 需要 Node.js（https://nodejs.org）"
   have npm || die "构建 rpk 需要 npm"
   for pair in "${RPK_NAMES[@]}"; do

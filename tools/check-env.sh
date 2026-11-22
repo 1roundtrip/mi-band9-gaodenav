@@ -81,21 +81,24 @@ else
 fi
 
 say ""
-say "== 二、RPK 构建链（band-app / band-app-pro）=="
+say "== 二、RPK 构建链（8 / 8Pro / 9 / 9Pro / 10 / 10Pro / 11 共 7 个机型）=="
 if command -v node >/dev/null 2>&1; then row OK node "$(node -v)"; else row MISSING node "装 Node.js 18+（https://nodejs.org）"; fi
 if command -v npm >/dev/null 2>&1; then row OK npm "$(npm -v 2>/dev/null)"; else row MISSING npm "随 Node.js 一起安装"; fi
 if command -v aiot >/dev/null 2>&1; then
   row OK aiot "$(aiot -v 2>/dev/null || echo 已安装（全局）)"
-elif [ -x "$ROOT/band-app/node_modules/.bin/aiot" ] || [ -x "$ROOT/band-app-pro/node_modules/.bin/aiot" ]; then
+elif [ -x "$ROOT/band-app/node_modules/.bin/aiot" ] || [ -x "$ROOT/band-app-pro/node_modules/.bin/aiot" ] \
+     || [ -x "$ROOT/band-app-8/node_modules/.bin/aiot" ] || [ -x "$ROOT/band-app-8-pro/node_modules/.bin/aiot" ] \
+     || [ -x "$ROOT/band-app-10/node_modules/.bin/aiot" ] || [ -x "$ROOT/band-app-10-pro/node_modules/.bin/aiot" ] \
+     || [ -x "$ROOT/band-app-11/node_modules/.bin/aiot" ]; then
   row OK aiot "工程内 node_modules/.bin/aiot（npm install 已装好，build-all 会用它）"
 else
   row MISSING aiot "npm i -g aiot-toolkit（或在 band-app 里 npm install，工程内自带）"
 fi
-for d in band-app band-app-pro; do
+for d in band-app band-app-pro band-app-8 band-app-8-pro band-app-10 band-app-10-pro band-app-11; do
   if [ -s "$ROOT/$d/sign/release/private.pem" ] && [ -s "$ROOT/$d/sign/release/certificate.pem" ]; then
     row OK "$d 证书" "sign/release 已就绪"
   else
-    row MISSING "$d 证书" "bash tools/gen-signing.sh（会同时分发到两个机型）"
+    row MISSING "$d 证书" "bash tools/gen-signing.sh（会同时分发到全部机型）"
   fi
 done
 

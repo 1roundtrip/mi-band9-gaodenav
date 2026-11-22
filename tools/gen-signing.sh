@@ -18,7 +18,7 @@
 #   keys/certificate.pem     证书（APK 与 rpk 共用）
 #   keys/cert-sha256.txt     证书 SHA-256（无冒号小写，build.sh 读它做一致性校验）
 #   keys/fingerprints.txt    SHA1/SHA256/MD5 人类可读指纹（高德 Key 要填带冒号大写 SHA1）
-#   同时复制 private.pem/certificate.pem 到 band-app 与 band-app-pro 的 sign/{debug,release}/
+#   同时复制 private.pem/certificate.pem 到全部 5 个手环工程的 sign/{debug,release}/
 # =============================================================================
 set -euo pipefail
 
@@ -135,8 +135,8 @@ say "  SHA256 : $SHA256"
 [ -n "$MD5" ] && say "  MD5    : $MD5"
 say "  （高德开放平台 Key 要填上面这串带冒号大写的 SHA1）"
 
-step "5/5 分发到两个手环工程"
-for d in band-app band-app-pro; do
+step "5/5 分发到 7 个手环工程"
+for d in band-app band-app-pro band-app-8 band-app-8-pro band-app-10 band-app-10-pro band-app-11; do
   for mode in debug release; do
     dst="$ROOT/$d/sign/$mode"
     mkdir -p "$dst"

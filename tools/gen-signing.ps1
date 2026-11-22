@@ -5,7 +5,7 @@
 .DESCRIPTION
   对应 tools/gen-signing.sh：
     keys/release.jks -> keys/release.p12 -> keys/private.pem + keys/certificate.pem
-    并复制 PEM 到 band-app、band-app-pro 的 sign/debug 与 sign/release。
+    并复制 PEM 到全部 5 个手环工程的 sign/debug 与 sign/release。
 
   需要：keytool.exe（JDK）与 openssl.exe（Git for Windows 自带）。
   密码只做参数传入，不写进任何文件。
@@ -96,8 +96,8 @@ $sha256Plain = ($sha256 -replace "^SHA256:\s*", "" -replace ":", "" -replace "\s
 Set-Content -Encoding ASCII -NoNewline (Join-Path $OutDir "cert-sha256.txt") $sha256Plain
 @($sha1, $sha256, $md5) | Set-Content -Encoding UTF8 (Join-Path $OutDir "fingerprints.txt")
 
-Step "5/5 分发到两个手环工程"
-foreach ($app in @("band-app", "band-app-pro")) {
+Step "5/5 分发到 5 个手环工程"
+foreach ($app in @("band-app", "band-app-pro", "band-app-8", "band-app-10", "band-app-11")) {
     foreach ($mode in @("debug", "release")) {
         $dst = Join-Path $Repo "$app\sign\$mode"
         New-Item -ItemType Directory -Force -Path $dst | Out-Null

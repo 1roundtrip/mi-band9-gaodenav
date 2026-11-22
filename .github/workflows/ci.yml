@@ -30,7 +30,13 @@ jobs:
           java -cp "${RUNNER_TEMP}/icon-test" IconMapperTest
 
       - name: python 语法检查
-        run: python3 -m py_compile tools/verify-rpk-cert.py
+        run: python3 -m py_compile tools/verify-rpk-cert.py tools/check-protocol.py
+
+      - name: 导航帧协议一致性（手机端 TURNS ↔ 两端 ICONS）
+        run: python3 tools/check-protocol.py
+
+      - name: AmapLink 解析自测（30 条断言，纯 Java 无需 SDK）
+        run: bash tools/test-amaplink.sh
 
       - name: 禁止 SIGPIPE 危险写法（unzip ... | grep -q / head）
         run: |
@@ -51,13 +57,20 @@ jobs:
           set -e
           python3 - <<'PY'
           import json, sys
-          for p in ("band-app/src/manifest.json", "band-app-pro/src/manifest.json"):
+          # (工程目录, 期望 designWidth)：胶囊屏 192，方屏 Pro 336
+          apps = {
+              "band-app": 192, "band-app-8": 192, "band-app-10": 192, "band-app-11": 192,
+              "band-app-pro": 336, "band-app-8-pro": 336, "band-app-10-pro": 336,
+          }
+          for d, width in apps.items():
+              p = d + "/src/manifest.json"
               m = json.load(open(p, encoding="utf-8"))
               assert m["package"] == "cn.dsh.gaodenav", (p, m["package"])
               assert m["router"]["entry"] == "pages/index", p
               feats = {f["name"] for f in m["features"]}
               assert "system.interconnect" in feats, p
               assert "system.vibrator" in feats, p
+              assert m["config"]["designWidth"] == width, (p, m["config"]["designWidth"], width)
               print("OK", p, "designWidth =", m["config"]["designWidth"])
           PY
 
