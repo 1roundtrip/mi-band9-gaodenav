@@ -140,7 +140,16 @@ public class NavSdkActivity extends Activity implements NaviCallbackAdapter.Host
     /** 仅调试：adb/SEND 带 debug_auto_nav=true 时，算路成功后自动开始导航（便于真机截图验证） */
     private boolean debugAutoNav;
     private Button startNavBtn;
-    private LinearLayout prefRow;
+    /** 高德式「路线偏好」底部弹层 */
+    private LinearLayout prefSheet;
+    private final TextView[] prefPills = new TextView[6];
+    private Button prefBtn;
+    /** 高德偏好的展示顺序与对应的算路策略（AMapNavi PathPlanningStrategy） */
+    private static final String[] PREF_LABELS =
+            {"高德智能推荐", "高速优先", "不走高速", "躲避拥堵", "少收费", "时间优先"};
+    private static final int[] PREF_STRATEGIES = {10, 19, 13, 12, 14, 11};
+    private int prefIndex = 0;
+    private int driveStrategy = 10;
     /** 低频设置（途经点 / 选起点 / 驾车偏好）默认折叠，避免首屏被按钮淹没 */
     private LinearLayout morePanel;
     private Button moreBtn;
@@ -298,6 +307,23 @@ public class NavSdkActivity extends Activity implements NaviCallbackAdapter.Host
         // 6) 首页传入的输入（地名 / 坐标 / 高德分享链接），统一交给本页解析
         debugAutoNav = getIntent() != null && getIntent().getBooleanExtra("debug_auto_nav", false);
         consumeIncomingInput();
+        // 仅调试：adb 注入触控被 MIUI 拒绝时，用 extra 打开偏好弹层 / 预选偏好，方便真机截图验证
+        final int dbgPref = getIntent() == null ? -1 : getIntent().getIntExtra("debug_pref", -1);
+        if (dbgPref >= 0) {
+            handler.postDelayed(new Runnable() {
+                public void run() { selectPreference(dbgPref); }
+            }, 1200);
+        }
+        if (getIntent() != null && getIntent().getBooleanExtra("debug_arrive", false)) {
+            handler.postDelayed(new Runnable() {
+                public void run() { showEndPage("已到达目的地附近"); }
+            }, 2000);
+        }
+        if (getIntent() != null && getIntent().getBooleanExtra("debug_show_pref", false)) {
+            handler.postDelayed(new Runnable() {
+                public void run() { showPrefSheet(); }
+            }, 1800);
+        }
     }
 
     @Override
@@ -587,22 +613,11 @@ public class NavSdkActivity extends Activity implements NaviCallbackAdapter.Host
         morePanel.addView(viaRow, margins(0, dp(2), 0, dp(6)));
 
         // 驾车偏好切换（高德的「躲避拥堵/高速优先/少收费」）
-        prefRow = new LinearLayout(this);
-        prefRow.setOrientation(LinearLayout.HORIZONTAL);
-        prefRow.setVisibility(View.GONE);
-        prefRow.addView(smallButton("高德智能推荐", new View.OnClickListener() {
-            public void onClick(View v) { setPreference(0); }
-        }), weight1());
-        prefRow.addView(smallButton("躲避拥堵", new View.OnClickListener() {
-            public void onClick(View v) { setPreference(1); }
-        }), weight1());
-        prefRow.addView(smallButton("少收费", new View.OnClickListener() {
-            public void onClick(View v) { setPreference(2); }
-        }), weight1());
-        prefRow.addView(smallButton("不走高速", new View.OnClickListener() {
-            public void onClick(View v) { setPreference(3); }
-        }), weight1());
-        setupPanel.addView(prefRow, margins(0, dp(4), 0, 0));
+        // 高德式：偏好收进底部弹层，页面上只留一个入口，显示当前偏好
+        prefBtn = smallButton("偏好：高德智能推荐", new View.OnClickListener() {
+            public void onClick(View v) { showPrefSheet(); }
+        });
+        setupPanel.addView(prefBtn, margins(0, dp(4), 0, 0));
 
         setupPanel.addView(morePanel);
 
@@ -650,8 +665,14 @@ public class NavSdkActivity extends Activity implements NaviCallbackAdapter.Host
         dragHandle = new View(this);
         dragHandle.setBackground(rounded(0xFFD6DBE3, 3));
         handleArea.addView(dragHandle, new LinearLayout.LayoutParams(dp(40), dp(5)));
+        LinearLayout cardTitleRow = new LinearLayout(this);
+        cardTitleRow.setGravity(Gravity.CENTER_VERTICAL);
         routeCardTitle = text("为你找到的路线", TEXT_DARK, 14, true);
-        handleArea.addView(routeCardTitle, margins(0, dp(8), 0, 0));
+        cardTitleRow.addView(routeCardTitle, weight1());
+        cardTitleRow.addView(smallButton("路线偏好", new View.OnClickListener() {
+            public void onClick(View v) { showPrefSheet(); }
+        }));
+        handleArea.addView(cardTitleRow, margins(0, dp(6), 0, 0));
         handleArea.setOnTouchListener(handleTouch);
         routeCard.addView(handleArea);
 
@@ -696,48 +717,56 @@ public class NavSdkActivity extends Activity implements NaviCallbackAdapter.Host
         ebLp.topMargin = dp(10);
         root.addView(expandBtn, ebLp);
 
+        // ---- 路线偏好底部弹层（高德「路线偏好」卡） ----
+        buildPrefSheet();
+
         // ---- 导航结束页（全屏半透明遮罩 + 结果卡） ----
         buildEndPage();
 
         setContentView(root);
     }
 
-    /** 导航结束页：到达/手动结束都弹，显示用时、目的地、重新规划 */
+    /** 到达/结束页：高德式底部白卡（地图仍可见），不再是居中弹窗 */
     private void buildEndPage() {
         endPage = new LinearLayout(this);
-        endPage.setBackgroundColor(0x99000000);
-        endPage.setGravity(Gravity.CENTER);
+        endPage.setBackgroundColor(0x33000000); // 轻微压暗，保留地图上下文
+        endPage.setGravity(Gravity.BOTTOM);
         endPage.setVisibility(View.GONE);
+        // FrameLayout 按 elevation 决定绘制顺序：不抬高的话会被 routeCard(10)/prefSheet(14) 盖住
+        endPage.setElevation(dp(24));
 
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.VERTICAL);
-        card.setGravity(Gravity.CENTER_HORIZONTAL);
-        card.setBackground(rounded(WHITE, 20));
-        card.setPadding(dp(28), dp(32), dp(28), dp(24));
-        card.setElevation(dp(12));
+        card.setBackground(roundedTop(WHITE, 20));
+        card.setPadding(dp(20), dp(18), dp(20), dp(20));
+        card.setElevation(dp(14));
 
-        TextView check = text("✓", WHITE, 34, true);
-        check.setGravity(Gravity.CENTER);
-        check.setBackground(rounded(GREEN, 34));
-        check.setPadding(dp(18), dp(4), dp(18), dp(8));
-        card.addView(check);
+        LinearLayout titleRow = new LinearLayout(this);
+        titleRow.setGravity(Gravity.CENTER_VERTICAL);
+        endTitleView = text("已到达目的地附近", TEXT_DARK, 20, true);
+        titleRow.addView(endTitleView, weight1());
+        TextView close = text("✕", TEXT_GRAY, 18, false);
+        close.setPadding(dp(12), 0, 0, dp(2));
+        close.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) { hideEndPage(); }
+        });
+        titleRow.addView(close);
+        card.addView(titleRow);
 
-        endTitleView = text("已到达目的地", TEXT_DARK, 20, true);
-        card.addView(endTitleView, margins(0, dp(18), 0, 0));
         endDetailView = text("", TEXT_GRAY, 13, false);
-        endDetailView.setGravity(Gravity.CENTER);
-        card.addView(endDetailView, margins(0, dp(8), 0, 0));
+        card.addView(endDetailView, margins(0, dp(10), 0, 0));
 
         Button again = new Button(this);
         again.setText("重新规划");
         again.setAllCaps(false);
         again.setTextColor(WHITE);
-        again.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
+        again.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
+        again.setTypeface(Typeface.DEFAULT_BOLD);
         again.setBackground(rounded(BLUE, 12));
         again.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) { hideEndPage(); }
         });
-        card.addView(again, margins(0, dp(24), 0, 0));
+        card.addView(again, margins(0, dp(18), 0, 0));
 
         Button backHome = new Button(this);
         backHome.setText("返回首页");
@@ -748,12 +777,12 @@ public class NavSdkActivity extends Activity implements NaviCallbackAdapter.Host
         backHome.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) { finish(); }
         });
-        card.addView(backHome, margins(0, dp(4), 0, 0));
+        card.addView(backHome, margins(0, dp(6), 0, 0));
 
         FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT);
         endPage.addView(card, new FrameLayout.LayoutParams(
-                dp(280), ViewGroup.LayoutParams.WRAP_CONTENT));
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         root.addView(endPage, lp);
     }
 
@@ -882,6 +911,13 @@ public class NavSdkActivity extends Activity implements NaviCallbackAdapter.Host
         fromName = plan.from != null && plan.from.name.length() > 0 ? plan.from.name : "路线起点";
         updateFromView();
         planPolicy = plan.policy;
+        // 链接 policy: 0 默认 / 1 避堵 / 2 少收费 / 3 不走高速 → 对应偏好胶囊
+        if (plan.policy >= 0) {
+            int idx = plan.policy == 1 ? 3 : (plan.policy == 2 ? 4 : (plan.policy == 3 ? 2 : 0));
+            prefIndex = idx;
+            driveStrategy = PREF_STRATEGIES[idx];
+            updatePrefPills();
+        }
         vias.clear();
         for (AmapLink.Place v : plan.vias) {
             vias.add(new Via(v.name.length() > 0 ? v.name : "途经点", new NaviLatLng(v.lat, v.lng)));
@@ -931,8 +967,8 @@ public class NavSdkActivity extends Activity implements NaviCallbackAdapter.Host
         if (endPage != null) {
             endPage.setVisibility(View.GONE);
         }
-        if (prefRow != null) {
-            prefRow.setVisibility(mode == 0 ? View.VISIBLE : View.GONE);
+        if (prefBtn != null) {
+            prefBtn.setVisibility(mode == 0 ? View.VISIBLE : View.GONE); // 偏好只对驾车有意义
         }
         collapsePanel(false); // 重新算路时展开顶部表单
         navActive = false;
@@ -944,17 +980,102 @@ public class NavSdkActivity extends Activity implements NaviCallbackAdapter.Host
         requestRouteWhenReady();
     }
 
-    /** 驾车偏好切换：改策略后立刻用当前目的地重新算路 */
-    private void setPreference(int policy) {
-        if (policy == planPolicy) {
+    /** 高德式「路线偏好」底部弹层：两行胶囊 + 确定 */
+    private void buildPrefSheet() {
+        prefSheet = new LinearLayout(this);
+        prefSheet.setOrientation(LinearLayout.VERTICAL);
+        prefSheet.setBackground(roundedTop(WHITE, 20));
+        prefSheet.setElevation(dp(14));
+        prefSheet.setPadding(dp(18), dp(14), dp(18), dp(18));
+        prefSheet.setVisibility(View.GONE);
+
+        LinearLayout titleRow = new LinearLayout(this);
+        titleRow.setGravity(Gravity.CENTER_VERTICAL);
+        titleRow.addView(text("路线偏好", TEXT_DARK, 17, true), weight1());
+        titleRow.addView(smallButton("关闭", new View.OnClickListener() {
+            public void onClick(View v) { hidePrefSheet(); }
+        }));
+        prefSheet.addView(titleRow, margins(0, 0, 0, dp(12)));
+
+        LinearLayout row1 = new LinearLayout(this);
+        row1.setOrientation(LinearLayout.HORIZONTAL);
+        LinearLayout row2 = new LinearLayout(this);
+        row2.setOrientation(LinearLayout.HORIZONTAL);
+        for (int i = 0; i < PREF_LABELS.length; i++) {
+            final int idx = i;
+            TextView pill = text(PREF_LABELS[i], TEXT_DARK, 14, false);
+            pill.setGravity(Gravity.CENTER);
+            pill.setPadding(dp(8), dp(11), dp(8), dp(11));
+            pill.setOnClickListener(new View.OnClickListener() {
+                public void onClick(View v) { selectPreference(idx); }
+            });
+            prefPills[i] = pill;
+            LinearLayout row = i < 3 ? row1 : row2;
+            row.addView(pill, weight1());
+        }
+        prefSheet.addView(row1, margins(0, 0, 0, dp(8)));
+        prefSheet.addView(row2, margins(0, 0, 0, dp(16)));
+
+        Button ok = new Button(this);
+        ok.setText("确定");
+        ok.setAllCaps(false);
+        ok.setTextColor(WHITE);
+        ok.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
+        ok.setBackground(rounded(BLUE, 12));
+        ok.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) { hidePrefSheet(); }
+        });
+        prefSheet.addView(ok, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(50)));
+
+        FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        lp.gravity = Gravity.BOTTOM;
+        root.addView(prefSheet, lp);
+        updatePrefPills();
+    }
+
+    private void showPrefSheet() {
+        if (prefSheet != null) {
+            prefSheet.setVisibility(View.VISIBLE);
+        }
+    }
+
+    private void hidePrefSheet() {
+        if (prefSheet != null) {
+            prefSheet.setVisibility(View.GONE);
+        }
+    }
+
+    /** 选中一个偏好：高亮 + 记录策略，并按当前目的地重新算路 */
+    private void selectPreference(int idx) {
+        if (idx < 0 || idx >= PREF_STRATEGIES.length) {
             return;
         }
-        planPolicy = policy;
+        prefIndex = idx;
+        driveStrategy = PREF_STRATEGIES[idx];
+        updatePrefPills();
         if (destLatLng != null && navi != null) {
-            prepareRoute(0); // 偏好仅对驾车有意义，统一按驾车重算
-            setSetupStatus("已切换偏好，正在重新算路…");
+            prepareRoute(0); // 偏好只对驾车有意义
+            setSetupStatus("已切换「" + PREF_LABELS[idx] + "」，正在重新算路…");
         } else {
-            setSetupStatus("已选偏好，选定目的地后生效");
+            setSetupStatus("已选「" + PREF_LABELS[idx] + "」，选定目的地后生效");
+        }
+    }
+
+    private void updatePrefPills() {
+        for (int i = 0; i < prefPills.length; i++) {
+            TextView p = prefPills[i];
+            if (p == null) {
+                continue;
+            }
+            boolean on = i == prefIndex;
+            p.setBackground(rounded(on ? BLUE : 0xFFF2F4F7, 18));
+            p.setTextColor(on ? WHITE : TEXT_DARK);
+            p.setTypeface(on ? Typeface.DEFAULT_BOLD : Typeface.DEFAULT);
+        }
+        if (prefBtn != null) {
+            prefBtn.setText("偏好：" + PREF_LABELS[prefIndex]);
         }
     }
 
@@ -1297,6 +1418,9 @@ public class NavSdkActivity extends Activity implements NaviCallbackAdapter.Host
                 endDetailView.setText("用时 " + time + "\n目的地：" + dest
                         + "\n" + (Bridge.get().isReady() ? "手环已同步结束" : "手环未连接"));
                 endPage.setVisibility(View.VISIBLE);
+                if (expandBtn != null) {
+                    expandBtn.setVisibility(View.GONE); // 到达页面前面不要再浮「选择目的地」
+                }
             }
         });
     }
@@ -1438,7 +1562,8 @@ public class NavSdkActivity extends Activity implements NaviCallbackAdapter.Host
             return dp(96); // 只露把手 + 标题
         }
         if (state == 1) {
-            return Math.min(screenH * 45 / 100, dp(320));
+            // 高德的选路卡片区只到「方案卡 + 开始导航」，留白要少
+            return Math.min(screenH * 40 / 100, dp(250));
         }
         return (int) (screenH * 0.72f);
     }
@@ -1593,18 +1718,8 @@ public class NavSdkActivity extends Activity implements NaviCallbackAdapter.Host
                 for (Via v : vias) {
                     viaList.add(v.ll);
                 }
-                // policy: 0 默认 / 1 避堵 / 2 避收费 / 3 不走高速
-                int strategy;
-                if (planPolicy == 1) {
-                    strategy = navi.strategyConvert(true, false, false, false, false);
-                } else if (planPolicy == 2) {
-                    strategy = navi.strategyConvert(false, false, true, false, false);
-                } else if (planPolicy == 3) {
-                    strategy = navi.strategyConvert(false, true, false, false, false);
-                } else {
-                    strategy = navi.strategyConvert(true, false, false, false, false);
-                }
-                navi.calculateDriveRoute(fromList, toList, viaList, strategy);
+                // 算路策略直接用 PathPlanningStrategy 常量（偏好弹层里选的值）
+                navi.calculateDriveRoute(fromList, toList, viaList, driveStrategy);
                 setSetupStatus("已请求驾车算路" + (vias.isEmpty() ? "" : "（含 " + vias.size() + " 个途经点）") + "…");
             }
             Repo.log("[SDK] 算路请求已发出 mode=" + modeName() + " via=" + vias.size());
@@ -1876,6 +1991,10 @@ public class NavSdkActivity extends Activity implements NaviCallbackAdapter.Host
         }
         routeBox.setVisibility(View.VISIBLE);
         routeCard.setVisibility(View.VISIBLE);
+        // 修复：prepareRoute 会把「开始导航」隐藏，出方案后必须重新显示，否则无法开始导航
+        if (startNavBtn != null) {
+            startNavBtn.setVisibility(View.VISIBLE);
+        }
         if (routeCardTitle != null) {
             routeCardTitle.setText("为你找到 " + built.size() + " 条路线 · 上滑看详情");
         }
@@ -1897,7 +2016,10 @@ public class NavSdkActivity extends Activity implements NaviCallbackAdapter.Host
         }
         routeBox.setVisibility(View.GONE);
         startNavBtn.setVisibility(View.GONE);
-        prefRow.setVisibility(View.GONE);
+        if (prefBtn != null) {
+            prefBtn.setVisibility(View.GONE);
+        }
+        hidePrefSheet();
         if (routeCard != null) {
             routeCard.setVisibility(View.GONE);
         }
