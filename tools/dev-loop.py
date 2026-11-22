@@ -117,7 +117,7 @@ class Handler(BaseHTTPRequestHandler):
         if path in ("/", "", "/index.html"):
             if APK.exists():
                 st = APK.stat()
-                apk_line = "版本 V2.0.0 · %.1f MB · 更新于 %s" % (
+                apk_line = "版本 V2.1.0 · %.1f MB · 更新于 %s" % (
                     st.st_size / 1048576,
                     datetime.datetime.fromtimestamp(st.st_mtime).strftime("%m-%d %H:%M"),
                 )

@@ -27,8 +27,8 @@ band-app/
 {
   "package": "cn.dsh.gaodenav",
   "name": "手环导航",
-  "versionName": "2.0.0",
-  "versionCode": 4,
+  "versionName": "2.1.0",
+  "versionCode": 5,
   "minPlatformVersion": 1000,
   "deviceTypeList": ["watch"],
   "features": [
