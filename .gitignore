@@ -36,8 +36,15 @@ node_modules/
 band-app*/.temp_*/
 
 # ===== 手环工程的签名 PEM（由 tools/gen-signing 分发）=====
-band-app/sign/**/*.pem
-band-app-pro/sign/**/*.pem
+band-app*/sign/**/*.pem
+
+# ===== 本地调试产物 / 个人工作记录：不入库 =====
+# 装机截图（约 9 MB）体积大且随调试不断新增，交接时通过聊天/打包另行传递
+screenshots/
+# agent 工作日志（含本机路径、临时密码、调试流水）
+.workbuddy/
+# 图标预览临时渲染
+.icon-preview/
 
 # ===== IDE / 本地配置 =====
 .idea/

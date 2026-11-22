@@ -1,4 +1,4 @@
-# 小米手环 9 / 9NFC 高德导航（手环导航）
+# 小米手环高德导航（手环 8 / 9 / 10 / 11 标准版 + Pro 全系列）
 
 把高德导航的转向提示推到手腕：**手机端 App（Android）+ 手环端 Vela 快应用（rpk）**，经小米互联（xms-wearable）通道传输。
 
@@ -19,7 +19,10 @@
 - **目的地选择**：
   - 关键词搜索 → **候选列表**（名称 + 详细地址 + 距离），点选后确认，不会自动取第一条
   - 地图选点（3D 地图点击落点 + 逆地理地址）
-  - 坐标直输（如 `39.9087,116.3975`）
+  - 坐标直输（如 `39.9087,116.3975`，需带小数且在中国范围内）
+  - 高德链接导入：标准链接（`uri.amap.com` / `m.amap.com`）、`s.amap.com` 短链、`amapuri://` 协议，
+    支持整条路线规划（起点 + 终点 + 途经点 + 出行方式）
+  - 系统分享：在高德 App 里「分享 → 手环导航」，直接导入目的地或整条路线
 - **模拟导航**：仅测试用，按路线自动行驶（默认关闭）
 - **退出即停**：退出导航页 / 返回键 / 到达目的地都会真正 `stopNavi` 并停发帧
 - **深色界面**：状态卡片（手环连接/已下发帧数/导航状态）+ 高德 Key 配置卡片
@@ -43,19 +46,24 @@ bash tools/fetch-deps.sh
 export KS_PASS='你的密码'
 bash tools/gen-signing.sh
 
-# 3) 一键构建：APK + 手环 9 + 手环 9 Pro 两个 rpk
+# 3) 一键构建：APK + 7 个机型的 rpk（8/8Pro/9/9Pro/10/10Pro/11）
 bash tools/build-all.sh        # --skip-rpk 只打 APK；--skip-apk 只打 rpk
 ```
 
-产物在 `dist/`：`cn.dsh.gaodenav.apk`、`手环导航-手环9.rpk`、`手环导航-手环9Pro.rpk`、`BUILD-REPORT.txt`（哈希/证书/版本）。
+产物在 `dist/`：`cn.dsh.gaodenav.apk`、7 个机型的 rpk（`手环导航-手环8.rpk`、`手环导航-手环8Pro.rpk`、`手环导航-手环9.rpk`、`手环导航-手环9Pro.rpk`、`手环导航-手环10.rpk`、`手环导航-手环10Pro.rpk`、`手环导航-手环11.rpk`）、`BUILD-REPORT.txt`（哈希/证书/版本）。
 
 只想打 APK 或只想打 rpk 时：
 
 ```bash
 bash android-app/build.sh --check      # 只检查 APK 构建环境与依赖，不构建
 KS_PASS='你的密码' bash android-app/build.sh    # 只打 APK（产物在 android-app/dist/）
-(cd band-app && npm install && npx aiot release)      # 只打手环 9 的 rpk
-(cd band-app-pro && npm install && npx aiot release)  # 只打手环 9 Pro 的 rpk
+(cd band-app-8 && npm install && npx aiot release)       # 只打手环 8 的 rpk
+(cd band-app-8-pro && npm install && npx aiot release)   # 只打手环 8 Pro 的 rpk
+(cd band-app && npm install && npx aiot release)         # 只打手环 9 的 rpk
+(cd band-app-pro && npm install && npx aiot release)     # 只打手环 9 Pro 的 rpk
+(cd band-app-10 && npm install && npx aiot release)      # 只打手环 10 的 rpk
+(cd band-app-10-pro && npm install && npx aiot release)  # 只打手环 10 Pro 的 rpk
+(cd band-app-11 && npm install && npx aiot release)      # 只打手环 11 的 rpk
 python3 tools/verify-rpk-cert.py band-app/dist/<你的>.rpk keys/certificate.pem   # 校验 rpk 内嵌证书
 ```
 
@@ -89,12 +97,17 @@ python3 tools/verify-rpk-cert.py band-app/dist/<你的>.rpk keys/certificate.pem
 │       ├── Bridge.java              # 小米互联（反射调用 xms-wearable）
 │       ├── AmapPrivacy.java         # 高德隐私合规统一入口
 │       ├── AmapKey.java             # 高德 Key 运行时管理（SharedPreferences + 四模块 setApiKey）
-│       └── Repo.java                # 全局状态与日志环形缓冲
+│       └── Repo.java                # 全局帧序号 + logcat 日志入口
 ├── band-app/                       # 手环端 Vela 快应用（手环 9 / 9NFC，designWidth 192）
 │   ├── package.json
 │   ├── src/                        # manifest.json / pages/index / icons
 │   └── sign/debug|release/         # 放 private.pem + certificate.pem（不进仓库）
-├── band-app-pro/                   # 手环 9 Pro（designWidth 336）
+├── band-app-pro/                   # 手环 9 Pro（336×480 方屏，designWidth 336）
+├── band-app-8/                     # 手环 8 / 8NFC（192×490，与 9 代码一致）
+├── band-app-8-pro/                 # 手环 8 Pro（336×480 方屏，designWidth 336）
+├── band-app-10/                    # 手环 10 / 10NFC（212×520，等比缩放）
+├── band-app-10-pro/                # 手环 10 Pro（336×480 方屏，designWidth 336）
+├── band-app-11/                    # 手环 11 / 11NFC（212×520，等比缩放）
 ├── third_party/AMapNavi/           # 高德 SDK 落地目录（fetch-deps 生成，不进仓库）
 └── keys/                           # 签名库与 PEM（gen-signing 生成，不进仓库）
 ```
@@ -145,7 +158,7 @@ python3 tools/verify-rpk-cert.py band-app/dist/<你的>.rpk keys/certificate.pem
 | 依赖 | 说明 | 获取方式 |
 | --- | --- | --- |
 | Android 8+ 小米手机 | 需要安装「小米运动健康」并已连接手环 | 用户自备 |
-| 小米手环 9 / 9NFC / 9 Pro | 手环端为 Vela 快应用（rpk） | 用户自备 |
+| 小米手环 8 / 8 Pro / 9 / 9 Pro / 10 / 10 Pro / 11（含 NFC 版） | 手环端为 Vela 快应用（rpk），见「机型适配」 | 用户自备 |
 | 高德开放平台 Key | 服务类型「Android 平台 SDK」，绑定**包名 + SHA1**（见 SIGNING.md） | <https://lbs.amap.com/> 免费申请 |
 | 高德 Android 导航 SDK | 官方直链：<https://amappc.cn-hangzhou.oss-pub.aliyun-inc.com/lbs/static/zip/AMap_Android_Navi_SDK_All.zip> | **自动**：`bash tools/fetch-deps.sh` |
 | 小米互联 SDK | 取自开源项目 BandQQ：<https://github.com/Gsjsjzhznsz/BandQQ>，只取 `android-sync/app/libs/xms-wearable-lib_1.4_release.aar` 里的 `classes.jar` | **自动**：`bash tools/fetch-deps.sh` |
@@ -312,16 +325,26 @@ AMapNavi.setApiKey(context, key);               // 导航
 
 ---
 
-## 机型适配（手环 9 / 9 Pro）
+## 机型适配
 
-| 机型 | 屏幕 | 手环端目录 | designWidth |
-| --- | --- | --- | --- |
-| 小米手环 9 / 9NFC | 192×490 | `band-app/` | 192 |
-| 小米手环 9 Pro | 336×480 | `band-app-pro/` | 336 |
+| 机型 | 屏幕 | 手环端目录 | designWidth | 状态 |
+| --- | --- | --- | --- | --- |
+| 小米手环 8 / 8NFC | 192×490 胶囊 | `band-app-8/` | 192 | 屏幕与 9 一致，待实机验证 |
+| **小米手环 8 Pro** | **336×480 方屏** | `band-app-8-pro/` | **336** | 与 9 Pro 同屏，待实机验证 |
+| 小米手环 9 / 9NFC | 192×490 胶囊 | `band-app/` | 192 | 作者实机验证 |
+| 小米手环 9 Pro | 336×480 方屏 | `band-app-pro/` | 336 | 作者实机验证 |
+| 小米手环 10 / 10NFC | 212×520 胶囊 | `band-app-10/` | 192 | 等比缩放适配，待实机验证 |
+| **小米手环 10 Pro** | **336×480 方屏** | `band-app-10-pro/` | **336** | 与 9 Pro 同屏，待实机验证 |
+| 小米手环 11 / 11NFC | 212×520 胶囊 | `band-app-11/` | 192 | 等比缩放适配，待实机验证 |
 
-- 手机端 APK 两台通用，不需要改包名或重新申请 Key
+- 手机端 APK **全机型通用**，不需要改包名或重新申请 Key；差异只在手环端 rpk
+- **屏幕分两类**：胶囊屏（8/9 192×490、10/11 212×520）用 `designWidth 192`；**Pro 方屏（8Pro/9Pro/10Pro 均为 336×480）用 `designWidth 336`**，按小米 Vela 官方多屏适配规格
+- 手环 10/11 为 212×520，PPI 与 9 系几乎相同，沿用 `designWidth: 192` 由 Vela 框架按屏宽自动等比放大（≈1.10 倍），布局用 `flex` 自适应高度，无需改样式
+- 三个 Pro 版（8Pro/9Pro/10Pro）布局完全相同，仅 App 名不同，便于在表盘工具里区分
+- **小米手环 11 Pro 尚未发布**（截至 2026-11 仅为认证/爆料阶段），故未提供对应 rpk；发布后可复制 `band-app-pro` 快速适配
 - 手环端 rpk 需按机型分别构建/安装，但**必须用同一把 keystore 签名**（与 APK 一致）
-- 其他小米 Vela 设备（手环 10、手表 S 系列等）可参照同样方式新增目录，改 `designWidth` 与布局尺寸后重打包
+- **能否收到互联推送需真机验证**：能装 Vela 快应用 ≠ 互联通道（`system.interconnect`）一定可用。8/8Pro/10/10Pro/11 未实机验证，若推送不通则是该机型互联 SDK 不支持，rpk 无法发挥作用
+- 其他小米 Vela 设备（手表 S 系列等）可参照同样方式新增目录，改 `designWidth` 与布局尺寸后重打包
 
 ---
 
@@ -329,11 +352,11 @@ AMapNavi.setApiKey(context, key);               // 导航
 
 | 组件 | 版本 |
 | --- | --- |
-| 手机端 APK | 1.1.0（versionCode 8） |
-| 手环端 rpk（9 / 9 Pro） | 1.1.0（versionCode 3） |
+| 手机端 APK | 2.0.0（versionCode 9） |
+| 手环端 rpk（8 / 8Pro / 9 / 9Pro / 10 / 10Pro / 11，共 7 个） | 2.0.0（versionCode 4） |
 
-两端版本号已统一为 **1.1.0**；包名与证书必须一致。
-### 已发布签名（v1.1.0）
+两端版本号已统一为 **2.0.0**（versionCode 各自递增，可覆盖安装）；包名与证书必须一致。
+### 已发布签名（v1.1.0 起，v2.0.0 沿用）
 
 | 项 | 值 |
 | --- | --- |
@@ -341,7 +364,7 @@ AMapNavi.setApiKey(context, key);               // 导航
 | 证书 SHA-1（高德 Key 绑定用） | `1D:69:3D:83:99:08:25:4F:B4:A8:AF:73:8A:EE:10:9B:F2:E1:D1:94` |
 | 证书 SHA-256 | `DF:9F:5E:E5:C7:3E:23:3A:0B:10:E1:5C:74:E3:D1:31:70:42:41:9C:D8:A7:74:FF:38:AB:34:5F:BA:D1:0C:F6` |
 
-- v1.1.0 的 APK / rpk 用上面这张证书签名；与旧版 v1.0.0 证书不同，**不能覆盖升级**，安装前先卸载旧版。
+- v1.1.0 与 v2.0.0 的 APK / rpk 都用上面这张证书签名，**可以覆盖升级**（v1.0.0 是另一把证书，从 v1.0.0 升级仍需先卸载）。
 - 发布包二进制不放进仓库（`.gitignore` 已忽略），从源码自行构建会得到**你自己的证书**，
   高德 Key 必须按你自己证书的 SHA1 重新申请（看 `keys/fingerprints.txt`）。
 
