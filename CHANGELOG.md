@@ -27,6 +27,8 @@
 - 途经点重复 `&via=` 只取第一个；途经点名称含逗号错位
 
 ### 精简
+- **移除未使用的 `WRITE_EXTERNAL_STORAGE` 权限**（App 不导出文件，高德 SDK 缓存写在应用私有目录），
+  权限只剩：包可见性（小米互联必需）、网络/WiFi 状态、定位、WAKE_LOCK
 - 移除仅供调试的 intent 开关（`debug_auto_nav` / `debug_pref` / `debug_show_pref` / `debug_arrive` / `debug_settings`），
   调试用的真机截图脚本不入库
 - 仓库不再包含内部交接文档；截图、个人工作日志、图标预览等本地文件继续由 `.gitignore` 排除

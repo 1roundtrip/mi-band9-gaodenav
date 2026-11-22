@@ -28,9 +28,8 @@
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_LOCATION_EXTRA_COMMANDS" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
-    <uses-permission
-        android:name="android.permission.WRITE_EXTERNAL_STORAGE"
-        android:maxSdkVersion="28" />
+    <!-- 注：不申请外部存储权限。高德 SDK 的瓦片/缓存都写在应用私有目录，
+         本 App 也不导出任何文件（2.1.0 精简权限时移除 WRITE_EXTERNAL_STORAGE）。 -->
 
     <application
         android:allowBackup="false"
