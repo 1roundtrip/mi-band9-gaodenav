@@ -142,6 +142,8 @@ public class NavSdkActivity extends Activity implements NaviCallbackAdapter.Host
     /** 低频设置（途经点 / 选起点 / 驾车偏好）默认折叠，避免首屏被按钮淹没 */
     private LinearLayout morePanel;
     private Button moreBtn;
+    /** 出行方式 Tab（高德式文字 Tab，选中高亮） */
+    private final TextView[] modeTabs = new TextView[3];
     /** 底部路线卡片（算路成功后浮现，支持折叠/半开/全开三态拖拽） */
     private LinearLayout routeCard;
     private FrameLayout.LayoutParams routeCardLp;
@@ -352,8 +354,30 @@ public class NavSdkActivity extends Activity implements NaviCallbackAdapter.Host
 
     @Override
     public void onBackPressed() {
-        stopNavigation("用户返回");
-        finish();
+        // 高德式二次确认：导航中返回要问一句，避免误触退出
+        confirmExit("退出导航？");
+    }
+
+    /** 退出/结束导航的二次确认（继续导航 / 退出） */
+    private void confirmExit(String title) {
+        if (isFinishing() || isDestroyed()) {
+            return;
+        }
+        new android.app.AlertDialog.Builder(this)
+                .setTitle(title)
+                .setMessage("退出后将停止向手环下发导航提示。")
+                .setNegativeButton("继续导航", null)
+                .setPositiveButton("退出", new android.content.DialogInterface.OnClickListener() {
+                    public void onClick(android.content.DialogInterface d, int which) {
+                        stopNavigation("用户确认退出");
+                        if (navActive || routeStarted) {
+                            showEndPage("导航已结束");
+                        } else {
+                            finish();
+                        }
+                    }
+                })
+                .show();
     }
 
     // ---------------------------------------------------------------- UI
@@ -388,8 +412,7 @@ public class NavSdkActivity extends Activity implements NaviCallbackAdapter.Host
         exitLp.leftMargin = dp(8);
         exitBtn.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) {
-                stopNavigation("用户点退出按钮");
-                showEndPage("导航已结束");
+                confirmExit("结束导航？");
             }
         });
         statusBar.addView(exitBtn, exitLp);
@@ -424,7 +447,12 @@ public class NavSdkActivity extends Activity implements NaviCallbackAdapter.Host
         fromRow.setGravity(Gravity.CENTER_VERTICAL);
         fromRow.setBackground(rounded(0xFFF2F4F7, 10));
         fromRow.setPadding(dp(12), dp(8), dp(6), dp(8));
-        fromView = text("起点：我的位置", TEXT_DARK, 13, false);
+        TextView fromDot = text("●", 0xFF2FBF71, 12, false);
+        LinearLayout.LayoutParams fromDotLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        fromDotLp.rightMargin = dp(8);
+        fromRow.addView(fromDot, fromDotLp);
+        fromView = text("我的位置", TEXT_DARK, 14, false);
         fromRow.addView(fromView, weight1());
         Button swapBtn = new Button(this);
         swapBtn.setText("⇅");
@@ -439,14 +467,35 @@ public class NavSdkActivity extends Activity implements NaviCallbackAdapter.Host
         fromRow.addView(swapBtn);
         setupPanel.addView(fromRow, margins(0, 0, 0, dp(8)));
 
+        // 终点行：红点 + 输入框（高德「输入终点」样式），回车即搜索
+        LinearLayout destRow = new LinearLayout(this);
+        destRow.setOrientation(LinearLayout.HORIZONTAL);
+        destRow.setGravity(Gravity.CENTER_VERTICAL);
+        destRow.setBackground(rounded(0xFFF2F4F7, 10));
+        destRow.setPadding(dp(12), dp(2), dp(12), dp(2));
+        TextView destDot = text("●", 0xFFE5484D, 12, false);
+        LinearLayout.LayoutParams destDotLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        destDotLp.rightMargin = dp(8);
+        destRow.addView(destDot, destDotLp);
         destInput = new EditText(this);
-        destInput.setHint("搜地点 / 粘贴高德链接");
+        destInput.setHint("输入终点 / 粘贴高德链接");
         destInput.setText("");
+        destInput.setSingleLine(true);
         destInput.setTextColor(TEXT_DARK);
         destInput.setHintTextColor(TEXT_GRAY);
-        destInput.setBackground(rounded(0xFFF2F4F7, 10));
-        destInput.setPadding(dp(12), dp(10), dp(12), dp(10));
-        setupPanel.addView(destInput, margins(0, 0, 0, dp(8)));
+        destInput.setBackground(null);
+        destInput.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
+        destInput.setPadding(0, dp(10), 0, dp(10));
+        destInput.setOnEditorActionListener(new TextView.OnEditorActionListener() {
+            public boolean onEditorAction(TextView v, int actionId, android.view.KeyEvent event) {
+                pickingTarget = PICK_DEST;
+                doSearch();
+                return true;
+            }
+        });
+        destRow.addView(destInput, weight1());
+        setupPanel.addView(destRow, margins(0, 0, 0, dp(8)));
 
         LinearLayout searchRow = new LinearLayout(this);
         searchRow.setOrientation(LinearLayout.HORIZONTAL);
@@ -536,7 +585,7 @@ public class NavSdkActivity extends Activity implements NaviCallbackAdapter.Host
         prefRow = new LinearLayout(this);
         prefRow.setOrientation(LinearLayout.HORIZONTAL);
         prefRow.setVisibility(View.GONE);
-        prefRow.addView(smallButton("智能推荐", new View.OnClickListener() {
+        prefRow.addView(smallButton("高德智能推荐", new View.OnClickListener() {
             public void onClick(View v) { setPreference(0); }
         }), weight1());
         prefRow.addView(smallButton("躲避拥堵", new View.OnClickListener() {
@@ -548,28 +597,29 @@ public class NavSdkActivity extends Activity implements NaviCallbackAdapter.Host
         prefRow.addView(smallButton("不走高速", new View.OnClickListener() {
             public void onClick(View v) { setPreference(3); }
         }), weight1());
-        morePanel.addView(prefRow, margins(0, dp(6), 0, 0));
+        setupPanel.addView(prefRow, margins(0, dp(4), 0, 0));
 
         setupPanel.addView(morePanel);
 
+        // 出行方式：高德式文字 Tab（选中主题蓝加粗），不再是三个等宽大按钮
         LinearLayout modeRow = new LinearLayout(this);
         modeRow.setOrientation(LinearLayout.HORIZONTAL);
-        modeRow.addView(smallButton("驾车", new View.OnClickListener() {
-            public void onClick(View v) {
-                prepareRoute(0);
-            }
-        }), weight1());
-        modeRow.addView(smallButton("骑行", new View.OnClickListener() {
-            public void onClick(View v) {
-                prepareRoute(1);
-            }
-        }), weight1());
-        modeRow.addView(smallButton("步行", new View.OnClickListener() {
-            public void onClick(View v) {
-                prepareRoute(2);
-            }
-        }), weight1());
-        setupPanel.addView(modeRow);
+        final String[] modeLabels = {"驾车", "骑行", "步行"};
+        for (int i = 0; i < modeLabels.length; i++) {
+            final int m = i;
+            TextView tab = text(modeLabels[i], i == 0 ? BLUE : TEXT_GRAY, 15, i == 0);
+            tab.setGravity(Gravity.CENTER);
+            tab.setPadding(dp(4), dp(9), dp(4), dp(9));
+            tab.setOnClickListener(new View.OnClickListener() {
+                public void onClick(View v) {
+                    prepareRoute(m);
+                    updateModeTabs();
+                }
+            });
+            modeTabs[i] = tab;
+            modeRow.addView(tab, weight1());
+        }
+        setupPanel.addView(modeRow, margins(0, dp(2), 0, dp(4)));
 
         setupStatus = text("", 0xFFB26A00, 12, false);
         setupPanel.addView(setupStatus, margins(0, dp(10), 0, 0));
@@ -836,6 +886,7 @@ public class NavSdkActivity extends Activity implements NaviCallbackAdapter.Host
                 plan.to.address, new NaviLatLng(plan.to.lat, plan.to.lng), "路线链接");
         if (plan.mode >= 0) {
             naviMode = plan.mode;
+            updateModeTabs();
         }
         String kind = plan.mode < 0 ? "公交（本 App 不支持，按驾车算）" : modeName();
         setSetupStatus("已导入路线：" + (plan.from != null ? "含起点、" : "")
@@ -856,6 +907,7 @@ public class NavSdkActivity extends Activity implements NaviCallbackAdapter.Host
             return;
         }
         naviMode = mode;
+        updateModeTabs();
         // 每次重新发起算路都重置导航状态（允许用户退出后再次开始）
         naviStopped = false;
         routeStarted = false;
@@ -1046,6 +1098,7 @@ public class NavSdkActivity extends Activity implements NaviCallbackAdapter.Host
         destLatLng = latLng;
         clearCandidates();
         setSelectedText();
+        centerOnDestination();
         setSetupStatus("已设定目的地（" + from + "），点下方「驾车/骑行/步行」开始导航");
         Repo.log("[SDK] 目的地(" + from + "): " + destName + " " + destAddress + " " + latLng);
     }
@@ -1123,6 +1176,23 @@ public class NavSdkActivity extends Activity implements NaviCallbackAdapter.Host
         Repo.log("[SDK] 起终点互换 from=" + fromName + " to=" + destName);
     }
 
+    /** 选定目的地后把地图带到该点（新实例的默认视角在别处，否则看起来像「定位错了」） */
+    private void centerOnDestination() {
+        if (naviView == null || destLatLng == null) {
+            return;
+        }
+        try {
+            com.amap.api.maps.AMap map = naviView.getMap();
+            if (map == null) {
+                return;
+            }
+            map.animateCamera(CameraUpdateFactory.newLatLngZoom(
+                    new LatLng(destLatLng.getLatitude(), destLatLng.getLongitude()), 13f));
+        } catch (Throwable t) {
+            Repo.log("[SDK] 移动镜头到目的地失败: " + t);
+        }
+    }
+
     private void updateFromView() {
         if (fromView == null) {
             return;
@@ -1131,7 +1201,7 @@ public class NavSdkActivity extends Activity implements NaviCallbackAdapter.Host
         if (n.length() > 16) {
             n = n.substring(0, 16) + "…";
         }
-        fromView.setText("起点：" + n);
+        fromView.setText(n);
     }
 
     /** 设为起点（搜索候选/地图选点回调里 pickingTarget==PICK_FROM 时调用） */
@@ -1248,6 +1318,18 @@ public class NavSdkActivity extends Activity implements NaviCallbackAdapter.Host
     }
 
     /** 展开/收起低频设置（途经点 / 选起点 / 驾车偏好） */
+    /** 高德式出行方式 Tab：选中项主题蓝加粗，其余灰色 */
+    private void updateModeTabs() {
+        for (int i = 0; i < modeTabs.length; i++) {
+            if (modeTabs[i] == null) {
+                continue;
+            }
+            boolean on = i == naviMode;
+            modeTabs[i].setTextColor(on ? BLUE : TEXT_GRAY);
+            modeTabs[i].setTypeface(on ? Typeface.DEFAULT_BOLD : Typeface.DEFAULT);
+        }
+    }
+
     private void toggleMore() {
         if (morePanel == null || moreBtn == null) {
             return;
