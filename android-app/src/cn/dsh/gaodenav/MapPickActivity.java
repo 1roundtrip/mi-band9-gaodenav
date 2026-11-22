@@ -3,6 +3,7 @@ package cn.dsh.gaodenav;
 import android.app.Activity;
 import android.content.Intent;
 import android.graphics.Color;
+import android.graphics.drawable.GradientDrawable;
 import android.os.Bundle;
 import android.util.TypedValue;
 import android.view.Gravity;
@@ -85,47 +86,50 @@ public class MapPickActivity extends Activity {
             Repo.log("[地图选点] MapView 初始化失败: " + t);
         }
 
-        // 顶部提示
+        // 顶部提示（高德风格白底卡片）
         LinearLayout top = new LinearLayout(this);
         top.setOrientation(LinearLayout.VERTICAL);
-        top.setBackgroundColor(0xCC101216);
-        top.setPadding(dp(12), dp(8), dp(12), dp(8));
+        top.setBackground(rounded(0xE6FFFFFF, 12));
+        top.setPadding(dp(14), dp(10), dp(14), dp(10));
         TextView title = new TextView(this);
-        title.setText("地图选点：点击地图任意位置作为目的地");
-        title.setTextColor(Color.WHITE);
-        title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
+        title.setText("点击地图选择目的地");
+        title.setTextColor(0xFF1A1A1A);
+        title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
         top.addView(title);
         hintView = new TextView(this);
-        hintView.setText("可双指缩放/拖动地图；点击后出现标记");
-        hintView.setTextColor(0xFF8A8F98);
-        hintView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10);
-        top.addView(hintView);
+        hintView.setText("双指缩放 / 拖动地图，点击后出现标记");
+        hintView.setTextColor(0xFF8A9099);
+        hintView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
+        top.addView(hintView, margins(0, dp(3), 0, 0));
         FrameLayout.LayoutParams topLp = new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         topLp.gravity = Gravity.TOP;
         root.addView(top, topLp);
 
-        // 底部确认栏
+        // 底部确认栏（白底卡片）
         LinearLayout bottom = new LinearLayout(this);
         bottom.setOrientation(LinearLayout.VERTICAL);
-        bottom.setBackgroundColor(0xE8101216);
-        bottom.setPadding(dp(12), dp(10), dp(12), dp(10));
+        bottom.setBackground(rounded(0xF2FFFFFF, 16));
+        bottom.setPadding(dp(16), dp(14), dp(16), dp(14));
         coordView = new TextView(this);
         coordView.setText("未选择位置");
-        coordView.setTextColor(0xFFE0B25A);
-        coordView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
+        coordView.setTextColor(0xFF1677FF);
+        coordView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
         bottom.addView(coordView);
         addressView = new TextView(this);
         addressView.setText("");
-        addressView.setTextColor(0xFFCDD3DA);
+        addressView.setTextColor(0xFF5A6069);
         addressView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
-        bottom.addView(addressView, margins(0, dp(4), 0, dp(8)));
+        bottom.addView(addressView, margins(0, dp(4), 0, dp(10)));
 
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
         Button cancel = new Button(this);
         cancel.setText("取消");
         cancel.setAllCaps(false);
+        cancel.setTextColor(0xFF5A6069);
+        cancel.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
+        cancel.setBackground(rounded(0xFFEEF1F5, 10));
         cancel.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) {
                 setResult(RESULT_CANCELED);
@@ -135,6 +139,9 @@ public class MapPickActivity extends Activity {
         Button confirm = new Button(this);
         confirm.setText("用这个位置");
         confirm.setAllCaps(false);
+        confirm.setTextColor(Color.WHITE);
+        confirm.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
+        confirm.setBackground(rounded(0xFF1677FF, 10));
         confirm.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) {
                 confirmPick();
@@ -307,6 +314,13 @@ public class MapPickActivity extends Activity {
         lp.rightMargin = right;
         lp.bottomMargin = bottom;
         return lp;
+    }
+
+    private GradientDrawable rounded(int color, int radiusDp) {
+        GradientDrawable d = new GradientDrawable();
+        d.setColor(color);
+        d.setCornerRadius(dp(radiusDp));
+        return d;
     }
 
     private int dp(int v) {

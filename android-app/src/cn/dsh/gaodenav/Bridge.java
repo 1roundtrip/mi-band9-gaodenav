@@ -90,9 +90,6 @@ public final class Bridge {
     private final Object connectLock = new Object();
     private volatile boolean connecting;
     private volatile boolean listenerRegistered;
-    /** 是否处于「签名不一致」状态（自动重连要退避到 60s，避免刷屏/反复拉起） */
-    private volatile boolean signatureError;
-
     // ---------------------------------------------------------------- 初始化
 
     public synchronized boolean init(Context ctx) {
@@ -379,7 +376,6 @@ public final class Bridge {
     private void markReady() {
         ready = true;
         listenerRegistered = true;
-        signatureError = false;
         setState("已连接手环");
         lastError = "";
         Repo.log("互联通道就绪");
@@ -425,7 +421,6 @@ public final class Bridge {
                             failSignature("sendMessage", error);
                         } else {
                             lastError = "sendMessage 失败: " + shortError(error);
-                            Repo.lastError = lastError;
                             Repo.log(lastError);
                         }
                         return;
@@ -744,7 +739,6 @@ public final class Bridge {
 
     private void fail(String message) {
         lastError = message;
-        Repo.lastError = message;
         setState(message);
         Repo.log(message);
         finishConnect();
@@ -753,26 +747,22 @@ public final class Bridge {
     private void failSignature(String where, Throwable error) {
         String msg = "手环互联签名校验失败（APK 与 rpk 证书不一致）[" + where + "]";
         lastError = msg;
-        Repo.lastError = msg + " 原始: " + shortError(error);
         setState("签名不一致，请两端统一证书后重装");
         Repo.log(msg);
         Repo.log("修复：① 手环上卸载旧的「高德导航」快应用 ② 重新安装 dist/cn.dsh.gaodenav.rpk "
                 + "③ 小米运动健康里重新授权本 App");
         ready = false;
-        signatureError = true;
         finishConnect();
     }
 
     private void setError(String prefix, Throwable t) {
         lastError = prefix + ": " + shortError(t);
-        Repo.lastError = lastError;
         Repo.log(lastError);
         Log.e(TAG, lastError, t);
     }
 
     private void setState(String s) {
         state = s;
-        Repo.bandState = s;
     }
 
     private static String shortError(Throwable t) {
@@ -805,11 +795,6 @@ public final class Bridge {
 
     public boolean isReady() {
         return ready;
-    }
-
-    /** 当前是否处于「APK 与 rpk 证书不一致」状态（自动重连据此退避 60s） */
-    public boolean isSignatureErrorState() {
-        return signatureError;
     }
 
     public boolean isListening() {

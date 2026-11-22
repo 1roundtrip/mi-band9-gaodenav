@@ -1,40 +1,30 @@
 package cn.dsh.gaodenav;
 
-import java.text.SimpleDateFormat;
-import java.util.ArrayList;
-import java.util.Date;
-import java.util.List;
-import java.util.Locale;
+import android.util.Log;
 
-/**
- * 极简全局状态 + 日志环形缓冲。MainActivity 每秒轮询渲染，方便截图调试。
- * 不用 Listener/Broadcast，减少组件间耦合和生命周期问题。
- */
+/** 帧序号 + logcat 输出。ponytail: 原日志环形缓冲没有任何 UI 消费者，删。 */
 public final class Repo {
 
-    private static final int MAX_LOG = 120;
+    private static final String TAG = "GaoDeNav";
+
     private static final Object LOCK = new Object();
-
-    /** 最近一次成功下发的导航帧 JSON */
-    public static volatile String lastFrame = "（暂无）";
-    /** 最近一次解析结果的可读描述（未识别也会写，方便看高德界面结构） */
-    public static volatile String lastParse = "（暂无）";
-    /** 当前导航是否处于活动状态（服务判定） */
-    public static volatile boolean navActive = false;
-    /** 手环互联状态（Bridge 写，UI 读） */
-    public static volatile String bandState = "未初始化";
-    /** 最近一次错误 */
-    public static volatile String lastError = "";
-
-    private static final List<String> LOG = new ArrayList<String>();
     private static long seq = 0L;
 
     private Repo() {
     }
 
+    /**
+     * 生成单调递增的帧序号。
+     * 用秒级 Unix 时间戳做下限，而不是纯进程内计数：App 被系统强杀重启后，
+     * 进程内计数会从 1 重新来，但手环端快应用若仍存活（没收到 stop），
+     * 其 lastSeq 还是上一程的大值，导致新程所有帧的 msg.seq > lastSeq 恒为 false，
+     * 转弯震动全部丢失。时间戳基准保证跨进程重启依然递增。
+     * 同一秒内的多帧用 seq+1 保证严格递增。
+     */
     public static int nextSeq() {
         synchronized (LOCK) {
-            seq++;
+            long wallSeconds = System.currentTimeMillis() / 1000L;
+            seq = Math.max(seq + 1, wallSeconds);
             if (seq > Integer.MAX_VALUE - 8) {
                 seq = 1;
             }
@@ -43,31 +33,6 @@ public final class Repo {
     }
 
     public static void log(String msg) {
-        if (msg == null) {
-            msg = "null";
-        }
-        String ts = new SimpleDateFormat("HH:mm:ss", Locale.US).format(new Date());
-        synchronized (LOCK) {
-            LOG.add(ts + " " + msg);
-            while (LOG.size() > MAX_LOG) {
-                LOG.remove(0);
-            }
-        }
-    }
-
-    public static String logText() {
-        StringBuilder sb = new StringBuilder();
-        synchronized (LOCK) {
-            for (int i = 0; i < LOG.size(); i++) {
-                sb.append(LOG.get(i)).append('\n');
-            }
-        }
-        return sb.toString();
-    }
-
-    public static void clearLog() {
-        synchronized (LOCK) {
-            LOG.clear();
-        }
+        Log.d(TAG, msg == null ? "null" : msg);
     }
 }

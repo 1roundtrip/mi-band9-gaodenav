@@ -8,8 +8,8 @@
 -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="cn.dsh.gaodenav"
-    android:versionCode="8"
-    android:versionName="1.1.0">
+    android:versionCode="9"
+    android:versionName="2.0.0">
 
     <uses-sdk
         android:minSdkVersion="26"
@@ -71,9 +71,17 @@
         <!-- 高德导航 SDK 集成页（搜索候选 / 坐标 / 地图选点 / 驾车·骑行·步行） -->
         <activity
             android:name=".NavSdkActivity"
+            android:exported="true"
             android:configChanges="orientation|keyboardHidden|screenSize"
             android:screenOrientation="portrait"
-            android:theme="@android:style/Theme.DeviceDefault.NoActionBar" />
+            android:theme="@android:style/Theme.DeviceDefault.NoActionBar">
+            <!-- 让高德「分享 → 复制链接」可经由文本分享直接打开本页导入 -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
+        </activity>
 
         <!-- 地图选点页（3D 地图 MapView + 逆地理地址） -->
         <activity

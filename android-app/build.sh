@@ -266,7 +266,9 @@ while IFS= read -r f; do
 done <"$BUILD_DIR/sources.txt"
 javac -encoding UTF-8 -source 8 -target 8 -nowarn -Xlint:-options \
   -classpath "$CP" -d "$APP/out/classes" "${JAVA_SOURCES[@]}" 2>&1 | tail -40
-[ -n "$(find "$APP/out/classes" -name '*.class' 2>/dev/null | head -1)" ] || die "javac 编译失败（往上翻看错误）"
+# ponytail: tail 会吞掉 javac 的退出码，必须显式取 PIPESTATUS[0]，
+# 否则编译失败也会继续打包，产出「显示成功但其实是旧代码」的假 APK。
+[ "${PIPESTATUS[0]}" -eq 0 ] || die "javac 编译失败（往上翻看错误）"
 info "class 文件：$(find "$APP/out/classes" -name '*.class' | wc -l | tr -d ' ') 个"
 
 # ---------------------------------------------------------------- 3. dex

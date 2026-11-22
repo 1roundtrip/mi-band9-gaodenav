@@ -14,17 +14,21 @@ package cn.dsh.gaodenav;
  */
 public final class NavFrame {
 
+    /**
+     * turn 字段的合法取值（协议契约）。tools/check-protocol.py 会解析本数组，
+     * 与两个手环端的 ICONS 键集合比对，防止一端改了另一端没跟上。
+     */
+    public static final String[] TURNS = {
+            "left", "right", "straight", "slight-left", "slight-right",
+            "uturn-left", "uturn-right", "arrive"
+    };
+
     public String turn = "straight";
     public String action = "";
     public int distMeters = -1;      // 下一动作距离，-1 表示未知
     public int remainSeconds = -1;   // 剩余时间，-1 表示未知
     public int remainMeters = -1;    // 剩余里程，-1 表示未知
     public boolean vibrate = true;
-
-    /** 去重用键：内容完全一致视为同一帧 */
-    public String key() {
-        return turn + "|" + action + "|" + distMeters + "|" + remainSeconds + "|" + remainMeters;
-    }
 
     public String toJson(int seq) {
         StringBuilder sb = new StringBuilder(160);
