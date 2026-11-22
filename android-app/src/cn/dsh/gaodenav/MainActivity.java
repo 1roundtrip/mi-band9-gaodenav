@@ -190,11 +190,38 @@ public class MainActivity extends Activity {
             return;
         }
         recentBox.setVisibility(View.VISIBLE);
+        // 表头：最近去过 + 清除（长按某一条可只删那条）
+        LinearLayout headRow = new LinearLayout(this);
+        headRow.setOrientation(LinearLayout.HORIZONTAL);
+        headRow.setGravity(Gravity.CENTER_VERTICAL);
         TextView head = new TextView(this);
         head.setText("最近去过");
         head.setTextColor(TEXT_GRAY);
         head.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
-        recentBox.addView(head, margins(0, dp(2), 0, dp(4)));
+        headRow.addView(head, weight1());
+        TextView clear = new TextView(this);
+        clear.setText("清除");
+        clear.setTextColor(BLUE);
+        clear.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
+        clear.setPadding(dp(10), dp(2), 0, dp(2));
+        clear.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) {
+                new android.app.AlertDialog.Builder(MainActivity.this)
+                        .setTitle("清除「最近去过」？")
+                        .setMessage("只清除本机记录，不影响收藏和地图上的点。")
+                        .setNegativeButton("取消", null)
+                        .setPositiveButton("清除", new android.content.DialogInterface.OnClickListener() {
+                            public void onClick(android.content.DialogInterface d, int w) {
+                                History.clearDestinations(MainActivity.this);
+                                renderRecent();
+                                Toast.makeText(MainActivity.this, "已清除最近去过", Toast.LENGTH_SHORT).show();
+                            }
+                        })
+                        .show();
+            }
+        });
+        headRow.addView(clear);
+        recentBox.addView(headRow, margins(0, dp(2), 0, dp(4)));
         int n = Math.min(dests.size(), 3);
         for (int i = 0; i < n; i++) {
             final History.Dest d = dests.get(i);
@@ -220,6 +247,14 @@ public class MainActivity extends Activity {
                     pickedName = d.name;
                     pickedAddress = "";
                     onGoHere();
+                }
+            });
+            row.setOnLongClickListener(new View.OnLongClickListener() {
+                public boolean onLongClick(View v) {
+                    History.removeDestination(MainActivity.this, d);
+                    renderRecent();
+                    Toast.makeText(MainActivity.this, "已删除「" + d.name + "」", Toast.LENGTH_SHORT).show();
+                    return true;
                 }
             });
             recentBox.addView(row, margins(0, 0, 0, dp(6)));
@@ -472,6 +507,8 @@ public class MainActivity extends Activity {
         settingsSheet = buildSettingsSheet();
         root.addView(settingsSheet, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        // FrameLayout 按 elevation 决定绘制顺序：不抬高会被底部卡片(6)/搜索栏(4) 盖住
+        settingsSheet.setElevation(dp(30));
         settingsSheet.setVisibility(View.GONE);
 
         return root;

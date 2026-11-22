@@ -145,8 +145,6 @@ public class NavSdkActivity extends Activity implements NaviCallbackAdapter.Host
     private final java.util.List<Integer> cmpRouteIds = new java.util.ArrayList<Integer>();
     private final java.util.List<View> routeCards = new java.util.ArrayList<View>();
     private int routeFastIdx;
-    /** 仅调试：adb/SEND 带 debug_auto_nav=true 时，算路成功后自动开始导航（便于真机截图验证） */
-    private boolean debugAutoNav;
     private Button startNavBtn;
     /** 高德式「路线偏好」底部弹层 */
     private LinearLayout prefSheet;
@@ -313,25 +311,7 @@ public class NavSdkActivity extends Activity implements NaviCallbackAdapter.Host
         handler.post(refresh);
 
         // 6) 首页传入的输入（地名 / 坐标 / 高德分享链接），统一交给本页解析
-        debugAutoNav = getIntent() != null && getIntent().getBooleanExtra("debug_auto_nav", false);
         consumeIncomingInput();
-        // 仅调试：adb 注入触控被 MIUI 拒绝时，用 extra 打开偏好弹层 / 预选偏好，方便真机截图验证
-        final int dbgPref = getIntent() == null ? -1 : getIntent().getIntExtra("debug_pref", -1);
-        if (dbgPref >= 0) {
-            handler.postDelayed(new Runnable() {
-                public void run() { selectPreference(dbgPref); }
-            }, 1200);
-        }
-        if (getIntent() != null && getIntent().getBooleanExtra("debug_arrive", false)) {
-            handler.postDelayed(new Runnable() {
-                public void run() { showEndPage("已到达目的地附近"); }
-            }, 2000);
-        }
-        if (getIntent() != null && getIntent().getBooleanExtra("debug_show_pref", false)) {
-            handler.postDelayed(new Runnable() {
-                public void run() { showPrefSheet(); }
-            }, 1800);
-        }
     }
 
     @Override
@@ -1298,6 +1278,37 @@ public class NavSdkActivity extends Activity implements NaviCallbackAdapter.Host
         }
     }
 
+    /** 历史区表头：标题 + 「清空」（带确认，只清本机记录） */
+    private View historyHeader(String title, final boolean searchSection) {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.addView(text(title, TEXT_GRAY, 12, false), weight1());
+        TextView clear = text("清空", BLUE, 12, false);
+        clear.setPadding(dp(8), dp(2), dp(2), dp(2));
+        clear.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) {
+                new android.app.AlertDialog.Builder(NavSdkActivity.this)
+                        .setTitle(searchSection ? "清空历史搜索？" : "清空历史路线？")
+                        .setMessage("只清除本机记录，不影响高德账号里的记录。")
+                        .setNegativeButton("取消", null)
+                        .setPositiveButton("清空", new android.content.DialogInterface.OnClickListener() {
+                            public void onClick(android.content.DialogInterface d, int w) {
+                                if (searchSection) {
+                                    History.clearSearches(NavSdkActivity.this);
+                                } else {
+                                    History.clearDestinations(NavSdkActivity.this);
+                                }
+                                renderHistory();
+                            }
+                        })
+                        .show();
+            }
+        });
+        row.addView(clear);
+        return row;
+    }
+
     /** 高德路线页空态：历史路线（我的位置 → X）/ 历史搜索，点一条直接导入 */
     private void renderHistory() {
         if (historyBox == null) {
@@ -1312,7 +1323,7 @@ public class NavSdkActivity extends Activity implements NaviCallbackAdapter.Host
         }
         historyBox.setVisibility(View.VISIBLE);
         if (!dests.isEmpty()) {
-            historyBox.addView(text("历史路线", TEXT_GRAY, 12, false),
+            historyBox.addView(historyHeader("历史路线", false),
                     margins(dp(2), 0, 0, dp(6)));
             int n = Math.min(dests.size(), 3);
             for (int i = 0; i < n; i++) {
@@ -1335,11 +1346,20 @@ public class NavSdkActivity extends Activity implements NaviCallbackAdapter.Host
                         selectDestination(d.name, "", new NaviLatLng(d.lat, d.lng), "历史路线");
                     }
                 });
+                row.setOnLongClickListener(new View.OnLongClickListener() {
+                    public boolean onLongClick(View v) {
+                        History.removeDestination(NavSdkActivity.this, d);
+                        renderHistory();
+                        Toast.makeText(NavSdkActivity.this,
+                                "已删除「" + d.name + "」", Toast.LENGTH_SHORT).show();
+                        return true;
+                    }
+                });
                 historyBox.addView(row, margins(0, 0, 0, dp(6)));
             }
         }
         if (!words.isEmpty()) {
-            historyBox.addView(text("历史搜索", TEXT_GRAY, 12, false),
+            historyBox.addView(historyHeader("历史搜索", true),
                     margins(dp(2), dp(4), 0, dp(6)));
             int n = Math.min(words.size(), 3);
             for (int i = 0; i < n; i++) {
@@ -1363,6 +1383,15 @@ public class NavSdkActivity extends Activity implements NaviCallbackAdapter.Host
                             destInput.setText(w);
                         }
                         runPoiSearch(w);
+                    }
+                });
+                row.setOnLongClickListener(new View.OnLongClickListener() {
+                    public boolean onLongClick(View v) {
+                        History.removeSearch(NavSdkActivity.this, w);
+                        renderHistory();
+                        Toast.makeText(NavSdkActivity.this,
+                                "已删除搜索「" + w + "」", Toast.LENGTH_SHORT).show();
+                        return true;
                     }
                 });
                 historyBox.addView(row, margins(0, 0, 0, dp(6)));
@@ -2101,11 +2130,6 @@ public class NavSdkActivity extends Activity implements NaviCallbackAdapter.Host
         panelState = 1;
         collapsePanel(true); // 收起顶部表单，让地图和路线露出来
         setSetupStatus("已算出 " + built.size() + " 条路线，点选后按「开始导航」");
-        if (debugAutoNav) {
-            debugAutoNav = false;
-            Repo.log("[SDK] debug_auto_nav=true，自动开始导航（调试）");
-            beginNavigation(previewRouteId);
-        }
     }
 
     /** 把地图镜头缩到「整条选中路线」（高德选路页就是这样），并给底部卡片留出空间 */

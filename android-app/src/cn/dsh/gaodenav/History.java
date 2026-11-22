@@ -72,12 +72,73 @@ public final class History {
         return parseDests(ctx == null ? null : prefs(ctx).getString(KEY_DEST, ""));
     }
 
+    /** 删除一条历史目的地（长按某行时用） */
+    public static void removeDestination(Context ctx, Dest target) {
+        if (ctx == null || target == null) {
+            return;
+        }
+        List<Dest> list = recentDestinations(ctx);
+        StringBuilder sb = new StringBuilder();
+        boolean first = true;
+        for (Dest d : list) {
+            if (d.name.equals(target.name)
+                    && Math.abs(d.lat - target.lat) < 1e-6
+                    && Math.abs(d.lng - target.lng) < 1e-6) {
+                continue;
+            }
+            if (!first) {
+                sb.append('\n');
+            }
+            first = false;
+            sb.append(d.name).append('\t').append(d.lat).append('\t').append(d.lng)
+                    .append('\t').append(d.time);
+        }
+        prefs(ctx).edit().putString(KEY_DEST, sb.toString()).apply();
+    }
+
+    /** 清空历史目的地 */
+    public static void clearDestinations(Context ctx) {
+        if (ctx != null) {
+            prefs(ctx).edit().remove(KEY_DEST).apply();
+        }
+    }
+
+    /** 删除一条搜索词 */
+    public static void removeSearch(Context ctx, String keyword) {
+        if (ctx == null || keyword == null) {
+            return;
+        }
+        List<String> list = recentSearches(ctx);
+        StringBuilder sb = new StringBuilder();
+        boolean first = true;
+        for (String k : list) {
+            if (k.equals(keyword.trim())) {
+                continue;
+            }
+            if (!first) {
+                sb.append('\n');
+            }
+            first = false;
+            sb.append(k);
+        }
+        prefs(ctx).edit().putString(KEY_SEARCH, sb.toString()).apply();
+    }
+
+    /** 清空历史搜索词 */
+    public static void clearSearches(Context ctx) {
+        if (ctx != null) {
+            prefs(ctx).edit().remove(KEY_SEARCH).apply();
+        }
+    }
+
     public static void addSearch(Context ctx, String keyword) {
         if (ctx == null || keyword == null) {
             return;
         }
         String k = keyword.replace("\t", " ").replace("\n", " ").trim();
-        if (k.length() == 0 || k.startsWith("http")) {
+        // 链接/带链接的整段分享文本不记成搜索词（太吵，而且下次点它只会再搜一次链接）
+        String lower = k.toLowerCase(java.util.Locale.US);
+        if (k.length() == 0 || lower.contains("http://") || lower.contains("https://")) {
             return;
         }
         List<String> list = recentSearches(ctx);
