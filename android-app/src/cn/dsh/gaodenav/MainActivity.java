@@ -92,6 +92,8 @@ public class MainActivity extends Activity {
     private TextView destTitleView;
     private TextView destSubView;
     private Button goBtn;
+    /** 首页「最近去过」列表（本地历史） */
+    private LinearLayout recentBox;
     private View settingsSheet;
 
     // 设置抽屉里的 Key 编辑器
@@ -173,6 +175,55 @@ public class MainActivity extends Activity {
         Bridge.get().init(this);
         handler.removeCallbacks(refresh);
         handler.post(refresh);
+        renderRecent();
+    }
+
+    /** 首页「最近去过」：读本地历史，点一条直接带坐标去导航（高德首页的习惯） */
+    private void renderRecent() {
+        if (recentBox == null) {
+            return;
+        }
+        recentBox.removeAllViews();
+        java.util.List<History.Dest> dests = History.recentDestinations(this);
+        if (dests.isEmpty() || pickedLatLng != null) {
+            recentBox.setVisibility(View.GONE);
+            return;
+        }
+        recentBox.setVisibility(View.VISIBLE);
+        TextView head = new TextView(this);
+        head.setText("最近去过");
+        head.setTextColor(TEXT_GRAY);
+        head.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
+        recentBox.addView(head, margins(0, dp(2), 0, dp(4)));
+        int n = Math.min(dests.size(), 3);
+        for (int i = 0; i < n; i++) {
+            final History.Dest d = dests.get(i);
+            LinearLayout row = new LinearLayout(this);
+            row.setOrientation(LinearLayout.HORIZONTAL);
+            row.setGravity(Gravity.CENTER_VERTICAL);
+            row.setBackground(rounded(0xFFF2F4F7, 10));
+            row.setPadding(dp(10), dp(9), dp(10), dp(9));
+            TextView name = new TextView(this);
+            name.setText("↺ " + d.name);
+            name.setTextColor(TEXT_DARK);
+            name.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
+            name.setSingleLine(true);
+            name.setEllipsize(android.text.TextUtils.TruncateAt.END);
+            row.addView(name, new LinearLayout.LayoutParams(
+                    0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+            row.setOnClickListener(new View.OnClickListener() {
+                public void onClick(View v) {
+                    if (searchInput != null) {
+                        searchInput.setText("");
+                    }
+                    pickedLatLng = new LatLng(d.lat, d.lng);
+                    pickedName = d.name;
+                    pickedAddress = "";
+                    onGoHere();
+                }
+            });
+            recentBox.addView(row, margins(0, 0, 0, dp(6)));
+        }
     }
 
     @Override
@@ -357,6 +408,12 @@ public class MainActivity extends Activity {
         destSubView.setTextColor(TEXT_GRAY);
         destSubView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
         bottom.addView(destSubView, margins(0, dp(4), 0, dp(12)));
+
+        // 高德首页式「最近去过」：只显示 3 条，点一条直接带坐标进导航
+        recentBox = new LinearLayout(this);
+        recentBox.setOrientation(LinearLayout.VERTICAL);
+        bottom.addView(recentBox, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
         goBtn = new Button(this);
         goBtn.setText("去这里");

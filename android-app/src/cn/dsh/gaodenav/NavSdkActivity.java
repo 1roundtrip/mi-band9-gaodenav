@@ -95,6 +95,8 @@ public class NavSdkActivity extends Activity implements NaviCallbackAdapter.Host
     private ScrollView setupScroll;
     private Button expandBtn;
     private LinearLayout candidateBox;
+    /** 路线页空态：本地历史路线 / 历史搜索 */
+    private LinearLayout historyBox;
     private TextView selectedView;
     private PoiSearch poiSearch;
     private String destName = "";
@@ -617,7 +619,6 @@ public class NavSdkActivity extends Activity implements NaviCallbackAdapter.Host
         prefBtn = smallButton("偏好：高德智能推荐", new View.OnClickListener() {
             public void onClick(View v) { showPrefSheet(); }
         });
-        setupPanel.addView(prefBtn, margins(0, dp(4), 0, 0));
 
         setupPanel.addView(morePanel);
 
@@ -640,6 +641,13 @@ public class NavSdkActivity extends Activity implements NaviCallbackAdapter.Host
             modeRow.addView(tab, weight1());
         }
         setupPanel.addView(modeRow, margins(0, dp(2), 0, dp(4)));
+        setupPanel.addView(prefBtn, margins(0, dp(2), 0, dp(4)));
+
+        // 高德路线页空态：历史路线 / 历史搜索（点一条直接导入）
+        historyBox = new LinearLayout(this);
+        historyBox.setOrientation(LinearLayout.VERTICAL);
+        setupPanel.addView(historyBox, margins(0, dp(6), 0, 0));
+        renderHistory();
 
         setupStatus = text("", 0xFFB26A00, 12, false);
         setupPanel.addView(setupStatus, margins(0, dp(10), 0, 0));
@@ -1119,6 +1127,7 @@ public class NavSdkActivity extends Activity implements NaviCallbackAdapter.Host
                                 + "），换个关键词或直接输坐标");
                         return;
                     }
+                    History.addSearch(NavSdkActivity.this, keyword);
                     showCandidates(result.getPois());
                 }
 
@@ -1169,6 +1178,9 @@ public class NavSdkActivity extends Activity implements NaviCallbackAdapter.Host
         // 结果列表展示时隐藏「未选择目的地」，避免和高德式结果列表抢视觉
         if (selectedView != null) {
             selectedView.setVisibility(View.GONE);
+        }
+        if (historyBox != null) {
+            historyBox.setVisibility(View.GONE);
         }
         setSetupStatus("找到 " + pois.size() + " 个候选，点一条选中");
 
@@ -1278,12 +1290,88 @@ public class NavSdkActivity extends Activity implements NaviCallbackAdapter.Host
         }
     }
 
+    /** 高德路线页空态：历史路线（我的位置 → X）/ 历史搜索，点一条直接导入 */
+    private void renderHistory() {
+        if (historyBox == null) {
+            return;
+        }
+        historyBox.removeAllViews();
+        java.util.List<History.Dest> dests = History.recentDestinations(this);
+        java.util.List<String> words = History.recentSearches(this);
+        if (dests.isEmpty() && words.isEmpty()) {
+            historyBox.setVisibility(View.GONE);
+            return;
+        }
+        historyBox.setVisibility(View.VISIBLE);
+        if (!dests.isEmpty()) {
+            historyBox.addView(text("历史路线", TEXT_GRAY, 12, false),
+                    margins(dp(2), 0, 0, dp(6)));
+            int n = Math.min(dests.size(), 3);
+            for (int i = 0; i < n; i++) {
+                final History.Dest d = dests.get(i);
+                LinearLayout row = new LinearLayout(this);
+                row.setOrientation(LinearLayout.HORIZONTAL);
+                row.setGravity(Gravity.CENTER_VERTICAL);
+                row.setBackground(rounded(WHITE, 12));
+                row.setPadding(dp(12), dp(11), dp(12), dp(11));
+                LinearLayout.LayoutParams ilp = new LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+                ilp.rightMargin = dp(8);
+                row.addView(text("↺", BLUE, 14, true), ilp);
+                TextView tv = text("我的位置 → " + d.name, TEXT_DARK, 13, false);
+                tv.setSingleLine(true);
+                tv.setEllipsize(TextUtils.TruncateAt.END);
+                row.addView(tv, weight1());
+                row.setOnClickListener(new View.OnClickListener() {
+                    public void onClick(View v) {
+                        selectDestination(d.name, "", new NaviLatLng(d.lat, d.lng), "历史路线");
+                    }
+                });
+                historyBox.addView(row, margins(0, 0, 0, dp(6)));
+            }
+        }
+        if (!words.isEmpty()) {
+            historyBox.addView(text("历史搜索", TEXT_GRAY, 12, false),
+                    margins(dp(2), dp(4), 0, dp(6)));
+            int n = Math.min(words.size(), 3);
+            for (int i = 0; i < n; i++) {
+                final String w = words.get(i);
+                LinearLayout row = new LinearLayout(this);
+                row.setOrientation(LinearLayout.HORIZONTAL);
+                row.setGravity(Gravity.CENTER_VERTICAL);
+                row.setBackground(rounded(WHITE, 12));
+                row.setPadding(dp(12), dp(11), dp(12), dp(11));
+                LinearLayout.LayoutParams ilp = new LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+                ilp.rightMargin = dp(8);
+                row.addView(text("○", 0xFF98A2B3, 13, false), ilp);
+                TextView tv = text(w, TEXT_DARK, 13, false);
+                tv.setSingleLine(true);
+                tv.setEllipsize(TextUtils.TruncateAt.END);
+                row.addView(tv, weight1());
+                row.setOnClickListener(new View.OnClickListener() {
+                    public void onClick(View v) {
+                        if (destInput != null) {
+                            destInput.setText(w);
+                        }
+                        runPoiSearch(w);
+                    }
+                });
+                historyBox.addView(row, margins(0, 0, 0, dp(6)));
+            }
+        }
+    }
+
     /** 设定目的地（搜索选中 / 坐标输入 / 地图选点共用） */
     private void selectDestination(String name, String address, NaviLatLng latLng, String from) {
         destName = safe(name);
         destAddress = safe(address);
         destLatLng = latLng;
         clearCandidates();
+        if (historyBox != null) {
+            historyBox.setVisibility(View.GONE);
+        }
+        History.addDestination(this, destName, latLng.getLatitude(), latLng.getLongitude());
         setSelectedText();
         centerOnDestination();
         // 高德行为：选定目的地后立刻按当前出行方式算路并给出方案，不用再点一次「驾车」
