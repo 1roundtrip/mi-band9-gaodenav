@@ -139,6 +139,12 @@ public class NavSdkActivity extends Activity implements NaviCallbackAdapter.Host
     private final List<RouteOpt> routeOpts = new ArrayList<RouteOpt>();
     /** 点选预览的路线 id（-1=未选）；选中后只高亮不开始，再点「开始导航」才走 */
     private int previewRouteId = -1;
+    /** 多方案对比气泡（高德式「慢3分钟 / 少7.3公里」）与卡片引用 */
+    private final java.util.List<com.amap.api.maps.model.Marker> cmpMarkers =
+            new java.util.ArrayList<com.amap.api.maps.model.Marker>();
+    private final java.util.List<Integer> cmpRouteIds = new java.util.ArrayList<Integer>();
+    private final java.util.List<View> routeCards = new java.util.ArrayList<View>();
+    private int routeFastIdx;
     /** 仅调试：adb/SEND 带 debug_auto_nav=true 时，算路成功后自动开始导航（便于真机截图验证） */
     private boolean debugAutoNav;
     private Button startNavBtn;
@@ -354,6 +360,7 @@ public class NavSdkActivity extends Activity implements NaviCallbackAdapter.Host
 
     @Override
     protected void onDestroy() {
+        clearCompareBubbles();
         handler.removeCallbacks(refresh);
         handler.removeCallbacks(locationTimeout);
         // 先真正停掉导航（stopNavi + 标志位），避免退出后 NaviInfo 还继续发帧
@@ -962,6 +969,7 @@ public class NavSdkActivity extends Activity implements NaviCallbackAdapter.Host
         routeStarted = false;
         previewRouteId = -1;
         routeOpts.clear();
+        clearCompareBubbles();
         if (routeBox != null) {
             routeBox.removeAllViews();
             routeBox.setVisibility(View.GONE);
@@ -1506,6 +1514,7 @@ public class NavSdkActivity extends Activity implements NaviCallbackAdapter.Host
                 endDetailView.setText("用时 " + time + "\n目的地：" + dest
                         + "\n" + (Bridge.get().isReady() ? "手环已同步结束" : "手环未连接"));
                 endPage.setVisibility(View.VISIBLE);
+                clearCompareBubbles(); // 到达页不需要再显示选路对比气泡
                 if (expandBtn != null) {
                     expandBtn.setVisibility(View.GONE); // 到达页面前面不要再浮「选择目的地」
                 }
@@ -2023,16 +2032,17 @@ public class NavSdkActivity extends Activity implements NaviCallbackAdapter.Host
             beginNavigation(-1); // 拿不到方案详情也照常导航，不阻塞
             return;
         }
-        // 找出最快方案，标「推荐」
-        int fastest = 0;
-        for (int i = 1; i < built.size(); i++) {
-            AMapNaviPath pi = navi.getNaviPaths().get(built.get(i).id);
-            AMapNaviPath pf = navi.getNaviPaths().get(built.get(fastest).id);
-            if (pi != null && pf != null && pi.getAllTime() < pf.getAllTime()) {
-                fastest = i;
+        // 高德顺序：用时最短的「推荐」排第一，其余按用时升序
+        java.util.Collections.sort(built, new java.util.Comparator<RouteOpt>() {
+            public int compare(RouteOpt a, RouteOpt b) {
+                AMapNaviPath pa = navi.getNaviPaths().get(a.id);
+                AMapNaviPath pb = navi.getNaviPaths().get(b.id);
+                int ta = pa == null ? Integer.MAX_VALUE : pa.getAllTime();
+                int tb = pb == null ? Integer.MAX_VALUE : pb.getAllTime();
+                return ta - tb;
             }
-        }
-        final int fastIdx = fastest;
+        });
+        final int fastIdx = 0;
         final List<View> cards = new ArrayList<View>();
         for (int i = 0; i < built.size(); i++) {
             final RouteOpt opt = built.get(i);
@@ -2051,16 +2061,7 @@ public class NavSdkActivity extends Activity implements NaviCallbackAdapter.Host
 
             card.setOnClickListener(new View.OnClickListener() {
                 public void onClick(View v) {
-                    previewRouteId = opt.id;
-                    try {
-                        navi.selectRouteId(opt.id); // 地图高亮，不出发
-                    } catch (Throwable ignore) {
-                        // ignore
-                    }
-                    for (int j = 0; j < cards.size(); j++) {
-                        cards.get(j).setBackground(rounded(
-                                j == idx ? 0xFFD6E8FF : (j == fastIdx ? 0xFFE8F2FF : 0xFFF2F4F7), 12));
-                    }
+                    previewRoute(idx); // 地图高亮 + 卡片选中态 + 重画对比气泡（不出发）
                 }
             });
             cards.add(card);
@@ -2077,6 +2078,15 @@ public class NavSdkActivity extends Activity implements NaviCallbackAdapter.Host
         } catch (Throwable ignore) {
             // ignore
         }
+        routeCards.clear();
+        routeCards.addAll(cards);
+        routeFastIdx = fastIdx;
+        fitMapToRoute();
+        drawCompareBubbles(fastIdx);
+        // SDK 在算路成功后可能自己再动一次镜头：延迟再适配一次，保证整条路线可见
+        handler.postDelayed(new Runnable() {
+            public void run() { fitMapToRoute(); }
+        }, 900);
         routeBox.setVisibility(View.VISIBLE);
         routeCard.setVisibility(View.VISIBLE);
         // 修复：prepareRoute 会把「开始导航」隐藏，出方案后必须重新显示，否则无法开始导航
@@ -2098,10 +2108,202 @@ public class NavSdkActivity extends Activity implements NaviCallbackAdapter.Host
         }
     }
 
+    /** 把地图镜头缩到「整条选中路线」（高德选路页就是这样），并给底部卡片留出空间 */
+    private void fitMapToRoute() {
+        try {
+            if (naviView == null || navi == null) {
+                return;
+            }
+            com.amap.api.maps.AMap map = naviView.getMap();
+            java.util.Map<Integer, AMapNaviPath> paths = navi.getNaviPaths();
+            if (map == null || paths == null || paths.isEmpty()) {
+                return;
+            }
+            AMapNaviPath sel = paths.get(previewRouteId);
+            if (sel == null) {
+                sel = paths.values().iterator().next();
+            }
+            com.amap.api.maps.model.LatLngBounds bounds = sel.getBoundsForPath();
+            if (bounds == null) {
+                return;
+            }
+            map.animateCamera(com.amap.api.maps.CameraUpdateFactory.newLatLngBoundsRect(
+                    bounds, dp(70), dp(90), dp(70), dp(300)));
+        } catch (Throwable t) {
+            Repo.log("[SDK] 路线镜头适配失败: " + t);
+        }
+    }
+
+    /** 选中一条预览方案：地图高亮 + 卡片选中态 + 重画对比气泡（不开始导航） */
+    private void previewRoute(int idx) {
+        if (idx < 0 || idx >= routeOpts.size()) {
+            return;
+        }
+        previewRouteId = routeOpts.get(idx).id;
+        try {
+            navi.selectRouteId(previewRouteId);
+        } catch (Throwable ignore) {
+            // ignore
+        }
+        for (int j = 0; j < routeCards.size(); j++) {
+            boolean on = j == idx;
+            routeCards.get(j).setBackground(rounded(on ? 0xFFD6E8FF
+                    : (j == routeFastIdx ? 0xFFE8F2FF : 0xFFF2F4F7), 12));
+        }
+        drawCompareBubbles(idx);
+    }
+
+    /**
+     * 高德式多方案对比气泡：在每条备选路线的分叉处标一张白底小卡
+     * 「慢3分钟 / 少7.3公里 · 多15个红绿灯」，点气泡即可切换方案。
+     */
+    private void drawCompareBubbles(int selectedIdx) {
+        clearCompareBubbles();
+        try {
+            if (naviView == null || navi == null || routeOpts.isEmpty()) {
+                return;
+            }
+            com.amap.api.maps.AMap map = naviView.getMap();
+            java.util.Map<Integer, AMapNaviPath> paths = navi.getNaviPaths();
+            if (map == null || paths == null || selectedIdx < 0 || selectedIdx >= routeOpts.size()) {
+                return;
+            }
+            AMapNaviPath sel = paths.get(routeOpts.get(selectedIdx).id);
+            if (sel == null) {
+                return;
+            }
+            for (int i = 0; i < routeOpts.size(); i++) {
+                if (i == selectedIdx) {
+                    continue;
+                }
+                AMapNaviPath alt = paths.get(routeOpts.get(i).id);
+                if (alt == null) {
+                    continue;
+                }
+                String text = compareText(sel, alt);
+                java.util.List<NaviLatLng> coords = alt.getCoordList();
+                if (text == null || coords == null || coords.size() < 3) {
+                    continue;
+                }
+                NaviLatLng at = pickDivergence(sel, coords);
+                if (at == null) {
+                    continue;
+                }
+                com.amap.api.maps.model.Marker marker = map.addMarker(
+                        new com.amap.api.maps.model.MarkerOptions()
+                                .position(new LatLng(at.getLatitude(), at.getLongitude()))
+                                .icon(com.amap.api.maps.model.BitmapDescriptorFactory
+                                        .fromBitmap(bubbleBitmap(text)))
+                                .anchor(0.5f, 1.0f));
+                if (marker != null) {
+                    cmpMarkers.add(marker);
+                    cmpRouteIds.add(routeOpts.get(i).id);
+                }
+            }
+            if (!cmpMarkers.isEmpty()) {
+                map.setOnMarkerClickListener(new com.amap.api.maps.AMap.OnMarkerClickListener() {
+                    public boolean onMarkerClick(com.amap.api.maps.model.Marker marker) {
+                        int at = cmpMarkers.indexOf(marker);
+                        if (at < 0) {
+                            return false;
+                        }
+                        int routeId = cmpRouteIds.get(at);
+                        for (int i = 0; i < routeOpts.size(); i++) {
+                            if (routeOpts.get(i).id == routeId) {
+                                previewRoute(i);
+                                break;
+                            }
+                        }
+                        return true;
+                    }
+                });
+            }
+        } catch (Throwable t) {
+            Repo.log("[SDK] 对比气泡绘制失败: " + t);
+        }
+    }
+
+    private void clearCompareBubbles() {
+        for (int i = 0; i < cmpMarkers.size(); i++) {
+            try {
+                cmpMarkers.get(i).remove();
+            } catch (Throwable ignore) {
+                // ignore
+            }
+        }
+        cmpMarkers.clear();
+        cmpRouteIds.clear();
+    }
+
+    /** 与选中方案相比的文字：「慢3分钟 / 少7.3公里 · 多15个红绿灯」，差异太小时返回 null */
+    private String compareText(AMapNaviPath sel, AMapNaviPath alt) {
+        int dt = alt.getAllTime() - sel.getAllTime();      // 秒
+        int dd = alt.getAllLength() - sel.getAllLength();  // 米
+        int dl = alt.getTrafficLightCount() - sel.getTrafficLightCount();
+        StringBuilder sb = new StringBuilder();
+        if (Math.abs(dt) >= 60) {
+            sb.append(dt > 0 ? "慢" : "快").append(Math.max(1, Math.abs(dt) / 60)).append("分钟");
+        } else {
+            sb.append("用时接近");
+        }
+        if (Math.abs(dd) >= 100) {
+            sb.append("\n").append(dd > 0 ? "多" : "少")
+                    .append(String.format(java.util.Locale.US, "%.1f", Math.abs(dd) / 1000.0))
+                    .append("公里");
+        }
+        if (Math.abs(dl) >= 3) {
+            sb.append(" · ").append(dl > 0 ? "多" : "少").append(Math.abs(dl)).append("个红绿灯");
+        }
+        return sb.toString();
+    }
+
+    /** 备选路线与选中路线的「分叉点」：从起点往后找第一处相距 > 250m 的位置 */
+    private NaviLatLng pickDivergence(AMapNaviPath sel, java.util.List<NaviLatLng> altCoords) {
+        java.util.List<NaviLatLng> selCoords = sel.getCoordList();
+        if (selCoords == null || selCoords.isEmpty()) {
+            return altCoords.get(altCoords.size() / 3);
+        }
+        int n = Math.min(altCoords.size(), selCoords.size());
+        int div = -1;
+        for (int i = 0; i < n; i++) {
+            NaviLatLng a = altCoords.get(i);
+            NaviLatLng s = selCoords.get(i);
+            if (distanceMeters(a.getLatitude(), a.getLongitude(),
+                    s.getLatitude(), s.getLongitude()) > 250) {
+                div = i;
+                break;
+            }
+        }
+        int idx = div < 0 ? altCoords.size() / 2 : Math.min(altCoords.size() - 1, div + 2);
+        return altCoords.get(idx);
+    }
+
+    /** 把一段文字画成白底圆角气泡的位图，作为地图 Marker 图标 */
+    private android.graphics.Bitmap bubbleBitmap(String text) {
+        TextView tv = new TextView(this);
+        tv.setText(text);
+        tv.setTextColor(0xFF1F2A37);
+        tv.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
+        tv.setGravity(Gravity.CENTER);
+        tv.setBackground(rounded(WHITE, 10));
+        tv.setPadding(dp(8), dp(6), dp(8), dp(6));
+        int spec = android.view.View.MeasureSpec.makeMeasureSpec(
+                0, android.view.View.MeasureSpec.UNSPECIFIED);
+        tv.measure(spec, spec);
+        int w = Math.max(tv.getMeasuredWidth(), dp(56));
+        int h = tv.getMeasuredHeight();
+        tv.layout(0, 0, w, h);
+        android.graphics.Bitmap bmp = android.graphics.Bitmap.createBitmap(
+                w, h, android.graphics.Bitmap.Config.ARGB_8888);
+        tv.draw(new android.graphics.Canvas(bmp));
+        return bmp;
+    }
+
     private void beginNavigation(int routeId) {
         if (routeId < 0 && !routeOpts.isEmpty()) {
             routeId = routeOpts.get(0).id;
         }
+        clearCompareBubbles();
         routeBox.setVisibility(View.GONE);
         startNavBtn.setVisibility(View.GONE);
         if (prefBtn != null) {
@@ -2124,6 +2326,8 @@ public class NavSdkActivity extends Activity implements NaviCallbackAdapter.Host
                 navOpts = new AMapNaviViewOptions();
             }
             navOpts.setLayoutVisible(true);
+            // 高德在选路时会把未选中的方案画成灰色，选中方案保持彩色
+            try { navOpts.setAfterRouteAutoGray(true); } catch (Throwable ignore) { }
             naviView.setViewOptions(navOpts);
         } catch (Throwable ignore) {
             // ignore
