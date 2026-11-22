@@ -137,6 +137,8 @@ public class NavSdkActivity extends Activity implements NaviCallbackAdapter.Host
     private final List<RouteOpt> routeOpts = new ArrayList<RouteOpt>();
     /** 点选预览的路线 id（-1=未选）；选中后只高亮不开始，再点「开始导航」才走 */
     private int previewRouteId = -1;
+    /** 仅调试：adb/SEND 带 debug_auto_nav=true 时，算路成功后自动开始导航（便于真机截图验证） */
+    private boolean debugAutoNav;
     private Button startNavBtn;
     private LinearLayout prefRow;
     /** 低频设置（途经点 / 选起点 / 驾车偏好）默认折叠，避免首屏被按钮淹没 */
@@ -294,6 +296,7 @@ public class NavSdkActivity extends Activity implements NaviCallbackAdapter.Host
         handler.post(refresh);
 
         // 6) 首页传入的输入（地名 / 坐标 / 高德分享链接），统一交给本页解析
+        debugAutoNav = getIntent() != null && getIntent().getBooleanExtra("debug_auto_nav", false);
         consumeIncomingInput();
     }
 
@@ -417,11 +420,13 @@ public class NavSdkActivity extends Activity implements NaviCallbackAdapter.Host
         });
         statusBar.addView(exitBtn, exitLp);
         statusBar.setVisibility(View.GONE);
+        // 手环状态角标放在 SDK 转向面板下方右侧：面板不挡、
+        // 也不压 SDK 左上角的速度表（高德原生界面没有这个元素，属于本 App 特色）
         FrameLayout.LayoutParams sbLp = new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         sbLp.gravity = Gravity.TOP | Gravity.RIGHT;
         sbLp.rightMargin = dp(12);
-        sbLp.topMargin = dp(50);
+        sbLp.topMargin = dp(150);
         root.addView(statusBar, sbLp);
 
         // 目的地选择面板（可收起；高德白底卡片风格）
@@ -1037,10 +1042,23 @@ public class NavSdkActivity extends Activity implements NaviCallbackAdapter.Host
         }
     }
 
-    /** 候选列表：名称 + 详细地址 + 距离（有则显示）；点击一条选中 */
+    /** 候选列表：高德式结果行（定位图标 + 蓝色名称 + 标签/地址 + 右侧距离与「去这里」） */
     private void showCandidates(java.util.List<PoiItem> pois) {
         clearCandidates();
-        setSetupStatus("找到 " + pois.size() + " 个候选，点一条选中（第 2 行是地址）");
+        // 结果列表展示时隐藏「未选择目的地」，避免和高德式结果列表抢视觉
+        if (selectedView != null) {
+            selectedView.setVisibility(View.GONE);
+        }
+        setSetupStatus("找到 " + pois.size() + " 个候选，点一条选中");
+
+        // 列表头：高德式「搜索结果 · N 个」
+        LinearLayout head = new LinearLayout(this);
+        head.setOrientation(LinearLayout.HORIZONTAL);
+        head.setGravity(Gravity.CENTER_VERTICAL);
+        head.addView(text("搜索结果", TEXT_GRAY, 12, false), weight1());
+        head.addView(text(pois.size() + " 个", TEXT_GRAY, 12, false));
+        candidateBox.addView(head, margins(dp(4), dp(2), dp(4), dp(6)));
+
         int n = Math.min(pois.size(), 10);
         for (int i = 0; i < n; i++) {
             final PoiItem item = pois.get(i);
@@ -1050,25 +1068,60 @@ public class NavSdkActivity extends Activity implements NaviCallbackAdapter.Host
             final String title = safe(item.getTitle());
             final String addr = safe(item.getSnippet());
             final LatLonPoint point = item.getLatLonPoint();
+            final String tag = safe(item.getTypeDes()).split(";")[0];
+            // 高德结果右侧一直显示距离：SDK 没给（未设 bound）时用当前定位本地算一个
             int distance = item.getDistance();
-            String distText = distance > 0 ? formatDistance(distance) : "";
+            NaviLatLng center = planFrom != null ? planFrom : cachedFrom;
+            if (distance <= 0 && center != null) {
+                distance = distanceMeters(center.getLatitude(), center.getLongitude(),
+                        point.getLatitude(), point.getLongitude());
+            }
+            final String distText = distance > 0 ? formatDistance(distance) : "";
 
-            // 高德风格结果卡片：名称（粗）+ 地址（灰），右侧距离
+            final String action = pickingTarget == PICK_VIA ? "设为途经"
+                    : (pickingTarget == PICK_FROM ? "设为起点" : "去这里");
+
             LinearLayout card = new LinearLayout(this);
             card.setOrientation(LinearLayout.HORIZONTAL);
             card.setGravity(Gravity.CENTER_VERTICAL);
-            card.setBackground(rounded(WHITE, 10));
-            card.setPadding(dp(12), dp(11), dp(12), dp(11));
+            card.setBackground(rounded(WHITE, 12));
+            card.setPadding(dp(12), dp(12), dp(12), dp(12));
+
+            // 左侧定位图标（灰色实心点，近似高德的 POI 标记）
+            TextView pin = text("◉", 0xFF98A2B3, 15, false);
+            LinearLayout.LayoutParams pinLp = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            pinLp.rightMargin = dp(10);
+            pinLp.topMargin = dp(1);
+            card.addView(pin, pinLp);
+
             LinearLayout info = new LinearLayout(this);
             info.setOrientation(LinearLayout.VERTICAL);
-            info.addView(text(title, TEXT_DARK, 14, true));
-            info.addView(text(safe(addr), TEXT_GRAY, 11, false), margins(0, dp(3), 0, 0));
+            TextView nameView = text(title, BLUE, 15, true);
+            nameView.setSingleLine(true);
+            nameView.setEllipsize(TextUtils.TruncateAt.END);
+            info.addView(nameView);
+            String sub = tag.length() > 0 ? (tag + " · " + addr) : addr;
+            TextView subView = text(sub, TEXT_GRAY, 12, false);
+            subView.setSingleLine(true);
+            subView.setEllipsize(TextUtils.TruncateAt.END);
+            info.addView(subView, margins(0, dp(3), 0, 0));
             card.addView(info, new LinearLayout.LayoutParams(
                     0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+
+            // 右侧：距离 + 「去这里」蓝色文字按钮（高德右侧「导航」图标的等价物）
+            LinearLayout rightBox = new LinearLayout(this);
+            rightBox.setOrientation(LinearLayout.VERTICAL);
+            rightBox.setGravity(Gravity.CENTER_HORIZONTAL);
             if (distText.length() > 0) {
-                card.addView(text(distText, BLUE, 12, false));
+                rightBox.addView(text(distText, TEXT_GRAY, 11, false));
             }
-            card.setOnClickListener(new View.OnClickListener() {
+            TextView go = text(action, BLUE, 12, true);
+            go.setPadding(dp(2), dp(5), 0, 0);
+            rightBox.addView(go);
+            card.addView(rightBox);
+
+            final View.OnClickListener pick = new View.OnClickListener() {
                 public void onClick(View v) {
                     NaviLatLng ll = new NaviLatLng(point.getLatitude(), point.getLongitude());
                     if (pickingTarget == PICK_VIA) {
@@ -1080,9 +1133,22 @@ public class NavSdkActivity extends Activity implements NaviCallbackAdapter.Host
                         selectDestination(title, addr, ll, "搜索");
                     }
                 }
-            });
+            };
+            card.setOnClickListener(pick);
+            go.setOnClickListener(pick);
             candidateBox.addView(card, margins(0, 0, 0, dp(6)));
         }
+    }
+
+    /** 两点间球面距离（米），用于搜索结果的距离显示 */
+    private static int distanceMeters(double lat1, double lng1, double lat2, double lng2) {
+        double r = 6371000.0;
+        double dLat = Math.toRadians(lat2 - lat1);
+        double dLng = Math.toRadians(lng2 - lng1);
+        double a = Math.sin(dLat / 2) * Math.sin(dLat / 2)
+                + Math.cos(Math.toRadians(lat1)) * Math.cos(Math.toRadians(lat2))
+                * Math.sin(dLng / 2) * Math.sin(dLng / 2);
+        return (int) (2 * r * Math.asin(Math.sqrt(a)));
     }
 
     private void clearCandidates() {
@@ -1099,7 +1165,9 @@ public class NavSdkActivity extends Activity implements NaviCallbackAdapter.Host
         clearCandidates();
         setSelectedText();
         centerOnDestination();
-        setSetupStatus("已设定目的地（" + from + "），点下方「驾车/骑行/步行」开始导航");
+        // 高德行为：选定目的地后立刻按当前出行方式算路并给出方案，不用再点一次「驾车」
+        prepareRoute(naviMode);
+        setSetupStatus("已设定目的地（" + from + "），正在规划路线…");
         Repo.log("[SDK] 目的地(" + from + "): " + destName + " " + destAddress + " " + latLng);
     }
 
@@ -1107,6 +1175,7 @@ public class NavSdkActivity extends Activity implements NaviCallbackAdapter.Host
         if (selectedView == null) {
             return;
         }
+        selectedView.setVisibility(View.VISIBLE);
         if (destLatLng == null) {
             selectedView.setText("未选择目的地");
             return;
@@ -1337,10 +1406,7 @@ public class NavSdkActivity extends Activity implements NaviCallbackAdapter.Host
         boolean show = morePanel.getVisibility() != View.VISIBLE;
         morePanel.setVisibility(show ? View.VISIBLE : View.GONE);
         moreBtn.setText(show ? "收起更多" : "更多");
-        // 偏好只在驾车模式显示
-        if (prefRow != null) {
-            prefRow.setVisibility(show && naviMode == 0 ? View.VISIBLE : View.GONE);
-        }
+        // 偏好胶囊已提到面板上（高德样式），不再由「更多」抽屉控制
     }
 
     /** 收起/展开目的地面板（收起后能看到地图，不挡满屏） */
@@ -1359,9 +1425,10 @@ public class NavSdkActivity extends Activity implements NaviCallbackAdapter.Host
 
     private static String formatDistance(int meters) {
         if (meters >= 1000) {
-            return String.format(java.util.Locale.US, "%.1fkm", meters / 1000.0);
+            // 高德口径用「公里 / 米」
+            return String.format(java.util.Locale.US, "%.1f公里", meters / 1000.0);
         }
-        return meters + "m";
+        return meters + "米";
     }
 
     /** 三态面板高度：折叠=把手、半开=卡片一半、全开=屏幕 72% */
@@ -1817,6 +1884,11 @@ public class NavSdkActivity extends Activity implements NaviCallbackAdapter.Host
         panelState = 1;
         collapsePanel(true); // 收起顶部表单，让地图和路线露出来
         setSetupStatus("已算出 " + built.size() + " 条路线，点选后按「开始导航」");
+        if (debugAutoNav) {
+            debugAutoNav = false;
+            Repo.log("[SDK] debug_auto_nav=true，自动开始导航（调试）");
+            beginNavigation(previewRouteId);
+        }
     }
 
     private void beginNavigation(int routeId) {
@@ -1832,6 +1904,9 @@ public class NavSdkActivity extends Activity implements NaviCallbackAdapter.Host
         routeStarted = true;
         naviStartMs = System.currentTimeMillis();
         collapsePanel(true);
+        if (expandBtn != null) {
+            expandBtn.setVisibility(View.GONE); // 导航中不让「选择目的地」浮在地图上
+        }
         // 进入导航：打开 SDK 原生导航浮层（退出栏、车道线、路况条等）
         try {
             AMapNaviViewOptions navOpts = naviView.getViewOptions();
